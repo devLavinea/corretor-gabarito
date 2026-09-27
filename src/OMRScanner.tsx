@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 
 import {
   Camera,
@@ -235,12 +241,6 @@ function transformPoint(point: Point, homography: Homography): Point {
 // ======================================================
 // DETECÇÃO DOS MARCADORES
 // ======================================================
-//
-// Procura quadrados pretos semelhantes aos quatro
-// marcadores existentes no gabarito.
-//
-// Não depende mais da posição fixa da página.
-// ======================================================
 
 function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
   const ctx = canvas.getContext("2d", {
@@ -297,7 +297,9 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
     for (let x = 0; x < width; x++) {
       const start = indexOf(x, y);
 
-      if (visited[start]) continue;
+      if (visited[start]) {
+        continue;
+      }
 
       const pixel = start * 4;
 
@@ -324,13 +326,17 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
         const current = queue[queueIndex++];
 
         const cy = Math.floor(current / width);
+
         const cx = current - cy * width;
 
         count++;
 
         minX = Math.min(minX, cx);
+
         maxX = Math.max(maxX, cx);
+
         minY = Math.min(minY, cy);
+
         maxY = Math.max(maxY, cy);
 
         if (maxX - minX > maxSize || maxY - minY > maxSize) {
@@ -351,7 +357,9 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
 
           const next = indexOf(nx, ny);
 
-          if (visited[next]) continue;
+          if (visited[next]) {
+            continue;
+          }
 
           const nextPixel = next * 4;
 
@@ -389,7 +397,9 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
 
       const fill = count / boundingArea;
 
-      if (fill < 0.35) continue;
+      if (fill < 0.35) {
+        continue;
+      }
 
       candidates.push({
         center: {
@@ -413,10 +423,10 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
     return null;
   }
 
-  /*
-   * Os marcadores devem possuir tamanho parecido.
-   * Ordenamos por proximidade do tamanho mediano.
-   */
+  // ====================================================
+  // FILTRA PELO TAMANHO DOS MARCADORES
+  // ====================================================
+
   const sortedByArea = [...candidates].sort((a, b) => a.area - b.area);
 
   const middle = sortedByArea[Math.floor(sortedByArea.length / 2)];
@@ -429,14 +439,10 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
       candidate.area <= middle.area * sizeTolerance,
   );
 
-  /*
-   * Precisamos de quatro pontos formando
-   * aproximadamente um quadrilátero.
-   *
-   * Tentamos várias combinações entre candidatos
-   * e escolhemos a que melhor representa os quatro
-   * cantos do gabarito.
-   */
+  // ====================================================
+  // ESCOLHE OS QUATRO CANDIDATOS MAIS PROVÁVEIS
+  // ====================================================
+
   const pool = filtered
     .sort(
       (a, b) => Math.abs(a.area - middle.area) - Math.abs(b.area - middle.area),
@@ -500,19 +506,11 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
 
           const aspect = horizontal / vertical;
 
-          /*
-           * O gabarito é aproximadamente 1123/380 = 2.95.
-           *
-           * Aceitamos bastante distorção para não
-           * rejeitar uma foto inclinada.
-           */
           const aspectError = Math.abs(Math.log(aspect / 2.95));
 
           if (aspectError > 1.25) {
             continue;
           }
-
-          const area = horizontal * vertical;
 
           const score =
             aspectError * 5 +
@@ -567,11 +565,6 @@ function measureBubble(
   let dark = 0;
   let total = 0;
 
-  /*
-   * Usa somente a parte interna.
-   * Assim a borda impressa da bolha não
-   * é confundida com preenchimento.
-   */
   const innerRadius = radius * 0.58;
 
   const centerPoint = size / 2;
@@ -614,31 +607,21 @@ function readQuestion(
 ): AnswerResult {
   const scores: number[] = [];
 
+  const pointA = transformPoint(getBubbleCenter(questionIndex, 0), homography);
+
+  const pointB = transformPoint(getBubbleCenter(questionIndex, 1), homography);
+
+  const bubbleStep = distance(pointA, pointB);
+
+  const radius = Math.max(
+    4,
+    bubbleStep * (OMR_TEMPLATE.bubble.radius / OMR_TEMPLATE.bubble.step),
+  );
+
   for (let alternative = 0; alternative < 4; alternative++) {
     const templatePoint = getBubbleCenter(questionIndex, alternative);
 
     const center = transformPoint(templatePoint, homography);
-
-    /*
-     * Estima o tamanho real da bolha usando
-     * a distância entre A e B.
-     */
-    const pointA = transformPoint(
-      getBubbleCenter(questionIndex, 0),
-      homography,
-    );
-
-    const pointB = transformPoint(
-      getBubbleCenter(questionIndex, 1),
-      homography,
-    );
-
-    const bubbleStep = distance(pointA, pointB);
-
-    const radius = Math.max(
-      4,
-      bubbleStep * (OMR_TEMPLATE.bubble.radius / OMR_TEMPLATE.bubble.step),
-    );
 
     scores.push(measureBubble(ctx, center, radius));
   }
@@ -653,9 +636,18 @@ function readQuestion(
   const best = ordered[0];
   const second = ordered[1];
 
-  /*
-   * Questão sem marca.
-   */
+  if (!best || !second) {
+    return {
+      answer: null,
+      confidence: 0,
+      scores,
+    };
+  }
+
+  // ====================================================
+  // SEM MARCA
+  // ====================================================
+
   if (best.value < 0.075) {
     return {
       answer: null,
@@ -666,9 +658,10 @@ function readQuestion(
 
   const difference = best.value - second.value;
 
-  /*
-   * Marca muito próxima entre duas alternativas.
-   */
+  // ====================================================
+  // DUAS ALTERNATIVAS MUITO PRÓXIMAS
+  // ====================================================
+
   if (difference < 0.035 && best.value < 0.28) {
     return {
       answer: null,
@@ -677,10 +670,10 @@ function readQuestion(
     };
   }
 
-  /*
-   * Se duas bolhas estão muito preenchidas,
-   * consideramos a questão ambígua.
-   */
+  // ====================================================
+  // DUAS BOLHAS MUITO PREENCHIDAS
+  // ====================================================
+
   if (second.value > 0.42 && difference < 0.12) {
     return {
       answer: null,
@@ -709,6 +702,8 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const streamRef = useRef<MediaStream | null>(null);
+
   const [stream, setStream] = useState<MediaStream | null>(null);
 
   const [preview, setPreview] = useState("");
@@ -726,102 +721,112 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   const [cameraReady, setCameraReady] = useState(false);
 
   // ====================================================
-  // ABRIR CÂMERA
-  // ====================================================
-
-  useEffect(() => {
-    let active = true;
-
-    async function startCamera() {
-      try {
-        setError("");
-        setCameraReady(false);
-
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error("Câmera não disponível.");
-        }
-
-        const media = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: {
-              ideal: "environment",
-            },
-
-            width: {
-              ideal: 1920,
-            },
-
-            height: {
-              ideal: 1080,
-            },
-
-            aspectRatio: {
-              ideal: 16 / 9,
-            },
-          },
-
-          audio: false,
-        });
-
-        if (!active) {
-          media.getTracks().forEach((track) => track.stop());
-
-          return;
-        }
-
-        setStream(media);
-
-        const video = videoRef.current;
-
-        if (!video) return;
-
-        video.srcObject = media;
-
-        await video.play();
-
-        if (active) {
-          setCameraReady(true);
-        }
-      } catch (err) {
-        console.error(err);
-
-        if (active) {
-          setError(
-            "Não foi possível acessar a câmera. Verifique a permissão do navegador ou use uma foto.",
-          );
-        }
-      }
-    }
-
-    void startCamera();
-
-    return () => {
-      active = false;
-
-      setStream((current) => {
-        current?.getTracks().forEach((track) => track.stop());
-
-        return null;
-      });
-    };
-  }, []);
-
-  // ====================================================
   // PARAR CÂMERA
   // ====================================================
 
-  function stopCamera() {
-    stream?.getTracks().forEach((track) => track.stop());
+  const stopCamera = useCallback(() => {
+    const currentStream = streamRef.current;
+
+    if (currentStream) {
+      currentStream.getTracks().forEach((track) => track.stop());
+    }
+
+    streamRef.current = null;
 
     setStream(null);
 
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.srcObject = null;
+    const video = videoRef.current;
+
+    if (video) {
+      video.pause();
+      video.srcObject = null;
     }
 
     setCameraReady(false);
-  }
+  }, []);
+
+  // ====================================================
+  // ABRIR CÂMERA
+  // ====================================================
+
+  const startCamera = useCallback(async () => {
+    try {
+      setError("");
+      setCameraReady(false);
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Câmera não disponível neste navegador.");
+      }
+
+      stopCamera();
+
+      const media = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: {
+            ideal: "environment",
+          },
+
+          width: {
+            ideal: 1920,
+          },
+
+          height: {
+            ideal: 1080,
+          },
+
+          aspectRatio: {
+            ideal: 16 / 9,
+          },
+        },
+
+        audio: false,
+      });
+
+      streamRef.current = media;
+
+      setStream(media);
+
+      const video = videoRef.current;
+
+      if (!video) {
+        media.getTracks().forEach((track) => track.stop());
+
+        streamRef.current = null;
+
+        setStream(null);
+
+        throw new Error("Vídeo da câmera não foi encontrado.");
+      }
+
+      video.srcObject = media;
+
+      await video.play();
+
+      setCameraReady(true);
+    } catch (err) {
+      console.error(err);
+
+      stopCamera();
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível acessar a câmera. Verifique a permissão do navegador ou use uma foto.",
+      );
+    }
+  }, [stopCamera]);
+
+  // ====================================================
+  // INICIA CÂMERA AO ABRIR
+  // ====================================================
+
+  useEffect(() => {
+    void startCamera();
+
+    return () => {
+      stopCamera();
+    };
+  }, [startCamera, stopCamera]);
 
   // ====================================================
   // PROCESSA IMAGEM
@@ -830,16 +835,20 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   function processImage(source: CanvasImageSource) {
     const canvas = canvasRef.current;
 
-    if (!canvas) return;
+    if (!canvas) {
+      throw new Error("Canvas de processamento indisponível.");
+    }
 
     let width = 0;
     let height = 0;
 
     if (source instanceof HTMLVideoElement) {
       width = source.videoWidth;
+
       height = source.videoHeight;
     } else if (source instanceof HTMLImageElement) {
       width = source.naturalWidth;
+
       height = source.naturalHeight;
     }
 
@@ -847,11 +856,10 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
       throw new Error("A imagem não possui tamanho válido.");
     }
 
-    /*
-     * Mantém uma resolução suficiente para
-     * detectar os marcadores sem exagerar
-     * no processamento.
-     */
+    // ==================================================
+    // REDIMENSIONAMENTO
+    // ==================================================
+
     const maxWidth = 2400;
 
     const scale = Math.min(1, maxWidth / width);
@@ -861,6 +869,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     const scaledHeight = Math.round(height * scale);
 
     canvas.width = scaledWidth;
+
     canvas.height = scaledHeight;
 
     const ctx = canvas.getContext("2d", {
@@ -875,9 +884,9 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
     ctx.drawImage(source, 0, 0, scaledWidth, scaledHeight);
 
-    // -----------------------------------------------
-    // PROCURA OS 4 MARCADORES
-    // -----------------------------------------------
+    // ==================================================
+    // DETECTA MARCADORES
+    // ==================================================
 
     const markers = detectMarkers(canvas);
 
@@ -887,9 +896,9 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
       );
     }
 
-    // -----------------------------------------------
+    // ==================================================
     // HOMOGRAFIA
-    // -----------------------------------------------
+    // ==================================================
 
     const sourcePoints = [
       markers.topLeft,
@@ -920,17 +929,14 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
       },
     ];
 
-    /*
-     * A homografia abaixo transforma coordenadas
-     * do gabarito original em coordenadas da foto.
-     */
     const homography = calculateHomography(destinationPoints, sourcePoints);
 
-    // -----------------------------------------------
-    // LEITURA
-    // -----------------------------------------------
+    // ==================================================
+    // LEITURA DAS 10 QUESTÕES
+    // ==================================================
 
     const answers: OMRAnswer[] = [];
+
     const uncertain: number[] = [];
 
     let confidenceTotal = 0;
@@ -938,15 +944,14 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     for (let question = 0; question < 10; question++) {
       const read = readQuestion(ctx, homography, question);
 
-      /*
-       * O sistema precisa devolver um array
-       * compatível com o restante do aplicativo.
-       *
-       * Para questão sem marca ou duvidosa,
-       * usamos A internamente, mas marcamos a
-       * questão como INCERTA para revisão.
-       */
       if (!read.answer) {
+        /*
+         * Mantém compatibilidade com o
+         * restante do aplicativo.
+         *
+         * A questão é marcada como incerta
+         * para revisão antes da confirmação.
+         */
         answers.push("A");
 
         uncertain.push(question + 1);
@@ -957,9 +962,9 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
       confidenceTotal += read.confidence;
     }
 
-    // -----------------------------------------------
-    // PREVIEW DA FOTO ORIGINAL
-    // -----------------------------------------------
+    // ==================================================
+    // PREVIEW
+    // ==================================================
 
     setPreview(canvas.toDataURL("image/jpeg", 0.9));
 
@@ -988,6 +993,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
     try {
       processImage(video);
+
       stopCamera();
     } catch (err) {
       console.error(err);
@@ -1014,9 +1020,9 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     setLoading(true);
     setError("");
 
-    try {
-      const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(file);
 
+    try {
       const image = new Image();
 
       image.src = url;
@@ -1029,8 +1035,6 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
       processImage(image);
 
-      URL.revokeObjectURL(url);
-
       stopCamera();
     } catch (err) {
       console.error(err);
@@ -1041,7 +1045,10 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
           : "Não foi possível processar a imagem.",
       );
     } finally {
+      URL.revokeObjectURL(url);
+
       setLoading(false);
+
       event.target.value = "";
     }
   }
@@ -1054,6 +1061,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     if (!result) return;
 
     onDetected(result.answers);
+
     onClose();
   }
 
@@ -1067,12 +1075,12 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     setError("");
 
     /*
-     * A câmera é reaberta automaticamente porque
-     * o componente continua montado.
+     * Reabre a câmera sem recarregar
+     * a página inteira.
      */
-    if (!stream) {
-      window.location.reload();
-    }
+    window.setTimeout(() => {
+      void startCamera();
+    }, 100);
   }
 
   // ====================================================
@@ -1081,6 +1089,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
   function close() {
     stopCamera();
+
     onClose();
   }
 
@@ -1091,12 +1100,12 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   return (
     <div className="fixed inset-0 z-[9999] bg-black">
       <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-black">
-        {/* ==================================================
-            CÂMERA
-        ================================================== */}
-
         {!preview ? (
           <>
+            {/* ==================================================
+                CÂMERA
+            ================================================== */}
+
             <video
               ref={videoRef}
               playsInline
@@ -1105,7 +1114,6 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
               className="absolute inset-0 h-full w-full object-cover"
             />
 
-            {/* Escurecimento leve */}
             <div className="pointer-events-none absolute inset-0 bg-black/10" />
 
             {/* ==================================================
@@ -1143,8 +1151,6 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
               <div className="relative w-full max-w-[1100px]">
                 <div className="aspect-[1123/380] w-full rounded-xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
 
-                {/* Cantos da moldura */}
-
                 <div className="absolute left-0 top-0 h-8 w-8 border-l-4 border-t-4 border-white" />
 
                 <div className="absolute right-0 top-0 h-8 w-8 border-r-4 border-t-4 border-white" />
@@ -1156,7 +1162,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
             </div>
 
             {/* ==================================================
-                INSTRUÇÃO INFERIOR
+                INSTRUÇÃO
             ================================================== */}
 
             <div className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
@@ -1198,6 +1204,12 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                     Câmera pronta
                   </div>
                 )}
+
+                {error && (
+                  <div className="mt-3 rounded-xl bg-red-500/20 px-3 py-2 text-xs text-red-200">
+                    {error}
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -1222,6 +1234,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                 type="button"
                 onClick={close}
                 className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100"
+                aria-label="Fechar resultado"
               >
                 <X size={20} />
               </button>
