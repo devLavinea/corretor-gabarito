@@ -91,6 +91,13 @@ const ALTERNATIVES: OMRAnswer[] = ["A", "B", "C", "D"];
 
 const BLACK_THRESHOLD = 105;
 
+// A leitura das bolhas não usa mais um limiar absoluto.
+// A iluminação da fotografia pode mudar bastante de uma sala para outra.
+// Os valores abaixo são usados apenas para a detecção dos marcadores técnicos;
+// as respostas são avaliadas por contraste LOCAL dentro de cada bolha.
+const MARKER_LOCAL_WINDOW = 31;
+const MARKER_CONTRAST = 28;
+
 // ======================================================
 // POSIÇÃO DAS BOLHAS
 // ======================================================
@@ -242,217 +249,227 @@ function transformPoint(point: Point, homography: Homography): Point {
 // DETECÇÃO DOS MARCADORES
 // ======================================================
 
-function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
-  const ctx = canvas.getContext("2d", {
-    willReadFrequently: true,
-  });
+function buildAdaptiveDarkMask(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  windowSize: number,
+  contrast: number,
+) {
+  const size = width * height;
+  const gray = new Uint8Array(size);
 
+  for (let i = 0; i < size; i++) {
+    gray[i] = Math.round(getGray(data, i * 4));
+  }
+
+  // Integral image: permite calcular rapidamente a iluminação média local.
+  const stride = width + 1;
+  const integral = new Float64Array((height + 1) * stride);
+  const radius = Math.floor(windowSize / 2);
+
+  for (let y = 0; y < height; y++) {
+    let rowSum = 0;
+
+    for (let x = 0; x < width; x++) {
+      rowSum += gray[y * width + x];
+      integral[(y + 1) * stride + (x + 1)] =
+        integral[y * stride + (x + 1)] + rowSum;
+    }
+  }
+
+  const mask = new Uint8Array(size);
+
+  const areaSum = (x1: number, y1: number, x2: number, y2: number) => {
+    return (
+      integral[(y2 + 1) * stride + (x2 + 1)] -
+      integral[y1 * stride + (x2 + 1)] -
+      integral[(y2 + 1) * stride + x1] +
+      integral[y1 * stride + x1]
+    );
+  };
+
+  for (let y = 0; y < height; y++) {
+    const y1 = Math.max(0, y - radius);
+    const y2 = Math.min(height - 1, y + radius);
+
+    for (let x = 0; x < width; x++) {
+      const x1 = Math.max(0, x - radius);
+      const x2 = Math.min(width - 1, x + radius);
+      const area = (x2 - x1 + 1) * (y2 - y1 + 1);
+      const localMean = areaSum(x1, y1, x2, y2) / area;
+      const value = gray[y * width + x];
+
+      // O pixel precisa ser significativamente mais escuro que a vizinhança.
+      // Isso funciona mesmo quando a folha inteira está sob uma sombra.
+      if (value < localMean - contrast) {
+        mask[y * width + x] = 1;
+      }
+    }
+  }
+
+  return mask;
+}
+
+function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
 
-  const maxDimension = 1400;
-
+  const maxDimension = 1600;
   const scale = Math.min(
     1,
     maxDimension / Math.max(canvas.width, canvas.height),
   );
-
   const width = Math.max(1, Math.round(canvas.width * scale));
-
   const height = Math.max(1, Math.round(canvas.height * scale));
 
   const scanCanvas = document.createElement("canvas");
-
   scanCanvas.width = width;
   scanCanvas.height = height;
 
-  const scanCtx = scanCanvas.getContext("2d", {
-    willReadFrequently: true,
-  });
-
+  const scanCtx = scanCanvas.getContext("2d", { willReadFrequently: true });
   if (!scanCtx) return null;
 
   scanCtx.drawImage(canvas, 0, 0, width, height);
-
   const image = scanCtx.getImageData(0, 0, width, height);
-
   const data = image.data;
 
-  const visited = new Uint8Array(width * height);
+  // Primeira tentativa: contraste local. Segunda tentativa: threshold absoluto.
+  // A segunda via ajuda em fotografias muito homogêneas e muito bem iluminadas.
+  const adaptiveMask = buildAdaptiveDarkMask(
+    data,
+    width,
+    height,
+    MARKER_LOCAL_WINDOW,
+    MARKER_CONTRAST,
+  );
 
-  const candidates: {
-    center: Point;
-    area: number;
-    width: number;
-    height: number;
-    fill: number;
-  }[] = [];
+  const absoluteMask = new Uint8Array(width * height);
+  for (let i = 0; i < absoluteMask.length; i++) {
+    absoluteMask[i] = getGray(data, i * 4) < BLACK_THRESHOLD ? 1 : 0;
+  }
 
-  const minSize = Math.max(6, Math.round(width * 0.006));
+  const collectCandidates = (mask: Uint8Array) => {
+    const visited = new Uint8Array(width * height);
+    const candidates: {
+      center: Point;
+      area: number;
+      width: number;
+      height: number;
+      fill: number;
+    }[] = [];
 
-  const maxSize = Math.max(45, Math.round(width * 0.12));
+    const minSize = Math.max(7, Math.round(width * 0.006));
+    const maxSize = Math.max(55, Math.round(width * 0.12));
+    const indexOf = (x: number, y: number) => y * width + x;
 
-  const indexOf = (x: number, y: number) => y * width + x;
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const start = indexOf(x, y);
-
-      if (visited[start]) {
-        continue;
-      }
-
-      const pixel = start * 4;
-
-      const gray = getGray(data, pixel);
-
-      if (gray > BLACK_THRESHOLD) {
-        visited[start] = 1;
-        continue;
-      }
-
-      const queue: number[] = [start];
-
-      visited[start] = 1;
-
-      let minX = x;
-      let maxX = x;
-      let minY = y;
-      let maxY = y;
-      let count = 0;
-
-      let queueIndex = 0;
-
-      while (queueIndex < queue.length) {
-        const current = queue[queueIndex++];
-
-        const cy = Math.floor(current / width);
-
-        const cx = current - cy * width;
-
-        count++;
-
-        minX = Math.min(minX, cx);
-
-        maxX = Math.max(maxX, cx);
-
-        minY = Math.min(minY, cy);
-
-        maxY = Math.max(maxY, cy);
-
-        if (maxX - minX > maxSize || maxY - minY > maxSize) {
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const start = indexOf(x, y);
+        if (visited[start] || !mask[start]) {
+          visited[start] = 1;
           continue;
         }
 
-        const neighbors = [
-          [cx + 1, cy],
-          [cx - 1, cy],
-          [cx, cy + 1],
-          [cx, cy - 1],
-        ];
+        const queue: number[] = [start];
+        visited[start] = 1;
+        let queueIndex = 0;
+        let minX = x;
+        let maxX = x;
+        let minY = y;
+        let maxY = y;
+        let count = 0;
+        let tooLarge = false;
 
-        for (const [nx, ny] of neighbors) {
-          if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
+        while (queueIndex < queue.length) {
+          const current = queue[queueIndex++];
+          const cy = Math.floor(current / width);
+          const cx = current - cy * width;
+          count++;
+
+          minX = Math.min(minX, cx);
+          maxX = Math.max(maxX, cx);
+          minY = Math.min(minY, cy);
+          maxY = Math.max(maxY, cy);
+
+          if (maxX - minX > maxSize || maxY - minY > maxSize) {
+            tooLarge = true;
             continue;
           }
 
-          const next = indexOf(nx, ny);
+          const neighbors = [
+            [cx + 1, cy],
+            [cx - 1, cy],
+            [cx, cy + 1],
+            [cx, cy - 1],
+          ];
 
-          if (visited[next]) {
-            continue;
-          }
-
-          const nextPixel = next * 4;
-
-          const nextGray = getGray(data, nextPixel);
-
-          if (nextGray <= BLACK_THRESHOLD) {
+          for (const [nx, ny] of neighbors) {
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            const next = indexOf(nx, ny);
+            if (visited[next]) continue;
             visited[next] = 1;
-            queue.push(next);
-          } else {
-            visited[next] = 1;
+            if (mask[next]) queue.push(next);
           }
         }
+
+        if (tooLarge) continue;
+
+        const componentWidth = maxX - minX + 1;
+        const componentHeight = maxY - minY + 1;
+        if (
+          componentWidth < minSize ||
+          componentHeight < minSize ||
+          componentWidth > maxSize ||
+          componentHeight > maxSize
+        ) continue;
+
+        const ratio = componentWidth / componentHeight;
+        if (ratio < 0.55 || ratio > 1.8) continue;
+
+        const boundingArea = componentWidth * componentHeight;
+        const fill = count / boundingArea;
+        if (fill < 0.28) continue;
+
+        candidates.push({
+          center: {
+            x: (minX + maxX) / 2 / scale,
+            y: (minY + maxY) / 2 / scale,
+          },
+          area: boundingArea / (scale * scale),
+          width: componentWidth / scale,
+          height: componentHeight / scale,
+          fill,
+        });
       }
-
-      const componentWidth = maxX - minX + 1;
-
-      const componentHeight = maxY - minY + 1;
-
-      if (
-        componentWidth < minSize ||
-        componentHeight < minSize ||
-        componentWidth > maxSize ||
-        componentHeight > maxSize
-      ) {
-        continue;
-      }
-
-      const ratio = componentWidth / componentHeight;
-
-      if (ratio < 0.55 || ratio > 1.8) {
-        continue;
-      }
-
-      const boundingArea = componentWidth * componentHeight;
-
-      const fill = count / boundingArea;
-
-      if (fill < 0.35) {
-        continue;
-      }
-
-      candidates.push({
-        center: {
-          x: (minX + maxX) / 2 / scale,
-
-          y: (minY + maxY) / 2 / scale,
-        },
-
-        area: boundingArea / (scale * scale),
-
-        width: componentWidth / scale,
-
-        height: componentHeight / scale,
-
-        fill,
-      });
     }
-  }
 
-  if (candidates.length < 4) {
-    return null;
-  }
+    return candidates;
+  };
 
-  // ====================================================
-  // FILTRA PELO TAMANHO DOS MARCADORES
-  // ====================================================
+  const adaptiveCandidates = collectCandidates(adaptiveMask);
+  const candidates = adaptiveCandidates.length >= 4
+    ? adaptiveCandidates
+    : collectCandidates(absoluteMask);
+
+  if (candidates.length < 4) return null;
 
   const sortedByArea = [...candidates].sort((a, b) => a.area - b.area);
-
   const middle = sortedByArea[Math.floor(sortedByArea.length / 2)];
-
   const sizeTolerance = 3.2;
-
   const filtered = candidates.filter(
     (candidate) =>
       candidate.area >= middle.area / sizeTolerance &&
       candidate.area <= middle.area * sizeTolerance,
   );
 
-  // ====================================================
-  // ESCOLHE OS QUATRO CANDIDATOS MAIS PROVÁVEIS
-  // ====================================================
-
   const pool = filtered
     .sort(
       (a, b) => Math.abs(a.area - middle.area) - Math.abs(b.area - middle.area),
     )
-    .slice(0, 30);
+    .slice(0, 36);
 
-  let best: {
-    markers: MarkerSet;
-    score: number;
-  } | null = null;
+  let best: { markers: MarkerSet; score: number } | null = null;
 
   for (let a = 0; a < pool.length; a++) {
     for (let b = a + 1; b < pool.length; b++) {
@@ -467,21 +484,16 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
 
           const center = {
             x: points.reduce((sum, point) => sum + point.x, 0) / 4,
-
             y: points.reduce((sum, point) => sum + point.y, 0) / 4,
           };
 
           const top = points
             .filter((point) => point.y <= center.y)
             .sort((p1, p2) => p1.x - p2.x);
-
           const bottom = points
             .filter((point) => point.y > center.y)
             .sort((p1, p2) => p1.x - p2.x);
-
-          if (top.length !== 2 || bottom.length !== 2) {
-            continue;
-          }
+          if (top.length !== 2 || bottom.length !== 2) continue;
 
           const topLeft = top[0];
           const topRight = top[1];
@@ -489,28 +501,17 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
           const bottomRight = bottom[1];
 
           const topDistance = distance(topLeft, topRight);
-
           const bottomDistance = distance(bottomLeft, bottomRight);
-
           const leftDistance = distance(topLeft, bottomLeft);
-
           const rightDistance = distance(topRight, bottomRight);
-
           const horizontal = (topDistance + bottomDistance) / 2;
-
           const vertical = (leftDistance + rightDistance) / 2;
 
-          if (horizontal < 100 || vertical < 30) {
-            continue;
-          }
+          if (horizontal < 100 || vertical < 30) continue;
 
           const aspect = horizontal / vertical;
-
           const aspectError = Math.abs(Math.log(aspect / 2.95));
-
-          if (aspectError > 1.25) {
-            continue;
-          }
+          if (aspectError > 1.25) continue;
 
           const score =
             aspectError * 5 +
@@ -519,12 +520,7 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
 
           if (!best || score < best.score) {
             best = {
-              markers: {
-                topLeft,
-                topRight,
-                bottomLeft,
-                bottomRight,
-              },
+              markers: { topLeft, topRight, bottomLeft, bottomRight },
               score,
             };
           }
@@ -540,77 +536,127 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
 // MEDE A BOLHA
 // ======================================================
 
+type BubbleMeasurement = {
+  score: number;
+  coreContrast: number;
+  bodyContrast: number;
+  outerContrast: number;
+  coreMean: number;
+  backgroundMean: number;
+};
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
 function measureBubble(
   ctx: CanvasRenderingContext2D,
   center: Point,
   radius: number,
-) {
-  const size = Math.max(8, Math.round(radius * 2));
-
+): BubbleMeasurement {
+  // Medimos várias coroas. A borda impressa da bolha fica fora do núcleo,
+  // enquanto uma marca que passa um pouco da borda ainda deixa sinal na coroa externa.
+  const outer = radius * 1.78;
+  const size = Math.max(12, Math.ceil(outer * 2 + 4));
   const x = Math.round(center.x - size / 2);
-
   const y = Math.round(center.y - size / 2);
 
   if (
     x < 0 ||
     y < 0 ||
-    x + size >= ctx.canvas.width ||
-    y + size >= ctx.canvas.height
+    x + size > ctx.canvas.width ||
+    y + size > ctx.canvas.height
   ) {
-    return 0;
+    return {
+      score: 0,
+      coreContrast: 0,
+      bodyContrast: 0,
+      outerContrast: 0,
+      coreMean: 255,
+      backgroundMean: 255,
+    };
   }
 
   const image = ctx.getImageData(x, y, size, size);
-
-  let dark = 0;
-  let total = 0;
-
-  const innerRadius = radius * 0.58;
-
   const centerPoint = size / 2;
+  const radius2 = outer * outer;
 
-  const innerSquared = innerRadius * innerRadius;
+  let coreSum = 0;
+  let coreCount = 0;
+  let bodySum = 0;
+  let bodyCount = 0;
+  let outerSum = 0;
+  let outerCount = 0;
+  let backgroundSum = 0;
+  let backgroundCount = 0;
 
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
       const dx = px + 0.5 - centerPoint;
-
       const dy = py + 0.5 - centerPoint;
+      const distance2 = dx * dx + dy * dy;
+      if (distance2 > radius2) continue;
 
-      if (dx * dx + dy * dy > innerSquared) {
-        continue;
+      const distanceRatio = Math.sqrt(distance2) / radius;
+      const gray = getGray(image.data, (py * size + px) * 4);
+
+      // Núcleo: principal indicador de preenchimento.
+      if (distanceRatio <= 0.58) {
+        coreSum += gray;
+        coreCount++;
+      // Corpo: captura preenchimento parcial sem depender da borda.
+      } else if (distanceRatio <= 0.88) {
+        bodySum += gray;
+        bodyCount++;
+      // Coroa externa: captura caneta que escapou um pouco da bolha.
+      } else if (distanceRatio <= 1.16) {
+        outerSum += gray;
+        outerCount++;
+      // Fora da bolha: referência de iluminação local.
+      } else if (distanceRatio >= 1.38 && distanceRatio <= 1.72) {
+        backgroundSum += gray;
+        backgroundCount++;
       }
-
-      const index = (py * size + px) * 4;
-
-      const gray = getGray(image.data, index);
-
-      if (gray < 155) {
-        dark++;
-      }
-
-      total++;
     }
   }
 
-  return total > 0 ? dark / total : 0;
-}
+  const coreMean = coreCount ? coreSum / coreCount : 255;
+  const bodyMean = bodyCount ? bodySum / bodyCount : coreMean;
+  const outerMean = outerCount ? outerSum / outerCount : bodyMean;
+  const backgroundMean = backgroundCount ? backgroundSum / backgroundCount : 255;
 
-// ======================================================
-// LEITURA DE UMA QUESTÃO
-// ======================================================
+  // Contraste relativo ao próprio entorno. Assim uma sombra que escurece
+  // toda a região não vira automaticamente uma resposta marcada.
+  const denominator = Math.max(32, backgroundMean);
+  const coreContrast = clamp01((backgroundMean - coreMean) / denominator);
+  const bodyContrast = clamp01((backgroundMean - bodyMean) / denominator);
+  const outerContrast = clamp01((backgroundMean - outerMean) / denominator);
+
+  // O núcleo pesa mais. As coroas permitem tolerar marcação imperfeita.
+  const score = clamp01(
+    coreContrast * 0.62 + bodyContrast * 0.28 + outerContrast * 0.10,
+  );
+
+  return {
+    score,
+    coreContrast,
+    bodyContrast,
+    outerContrast,
+    coreMean,
+    backgroundMean,
+  };
+}
 
 function readQuestion(
   ctx: CanvasRenderingContext2D,
   homography: Homography,
   questionIndex: number,
 ): AnswerResult {
+  const measurements: BubbleMeasurement[] = [];
   const scores: number[] = [];
 
   const pointA = transformPoint(getBubbleCenter(questionIndex, 0), homography);
-
   const pointB = transformPoint(getBubbleCenter(questionIndex, 1), homography);
-
   const bubbleStep = distance(pointA, pointB);
 
   const radius = Math.max(
@@ -619,70 +665,54 @@ function readQuestion(
   );
 
   for (let alternative = 0; alternative < 4; alternative++) {
-    const templatePoint = getBubbleCenter(questionIndex, alternative);
-
-    const center = transformPoint(templatePoint, homography);
-
-    scores.push(measureBubble(ctx, center, radius));
+    const center = transformPoint(
+      getBubbleCenter(questionIndex, alternative),
+      homography,
+    );
+    const measurement = measureBubble(ctx, center, radius);
+    measurements.push(measurement);
+    scores.push(measurement.score);
   }
 
   const ordered = scores
-    .map((value, index) => ({
-      value,
-      index,
-    }))
+    .map((value, index) => ({ value, index }))
     .sort((a, b) => b.value - a.value);
 
   const best = ordered[0];
   const second = ordered[1];
-
   if (!best || !second) {
-    return {
-      answer: null,
-      confidence: 0,
-      scores,
-    };
+    return { answer: null, confidence: 0, scores };
   }
 
-  // ====================================================
-  // SEM MARCA
-  // ====================================================
-
-  if (best.value < 0.075) {
-    return {
-      answer: null,
-      confidence: 0,
-      scores,
-    };
-  }
-
+  const bestMeasurement = measurements[best.index];
   const difference = best.value - second.value;
 
-  // ====================================================
-  // DUAS ALTERNATIVAS MUITO PRÓXIMAS
-  // ====================================================
+  // Critério adaptativo: uma marca pode ser fraca, desde que seja claramente
+  // mais escura que o próprio fundo e que as outras três bolhas.
+  const minimumScore = 0.075;
+  const strongMark = best.value >= 0.18;
+  const clearSeparation = difference >= Math.max(0.025, best.value * 0.16);
+  const meaningfulCore = bestMeasurement.coreContrast >= 0.045;
 
-  if (difference < 0.035 && best.value < 0.28) {
-    return {
-      answer: null,
-      confidence: 0,
-      scores,
-    };
+  if (
+    best.value < minimumScore ||
+    !meaningfulCore ||
+    (!strongMark && !clearSeparation)
+  ) {
+    return { answer: null, confidence: 0, scores };
   }
 
-  // ====================================================
-  // DUAS BOLHAS MUITO PREENCHIDAS
-  // ====================================================
-
-  if (second.value > 0.42 && difference < 0.12) {
-    return {
-      answer: null,
-      confidence: 0,
-      scores,
-    };
+  // Duas marcações fortes continuam sendo ambíguas, mesmo que uma seja
+  // ligeiramente maior. Isso evita transformar rasuras em respostas.
+  if (second.value >= 0.24 && difference < 0.08) {
+    return { answer: null, confidence: 0, scores };
   }
 
-  const confidence = Math.max(0, Math.min(1, difference / 0.28));
+  // Confiança baseada em separação relativa, não em brilho absoluto.
+  const confidence = clamp01(
+    0.55 * difference / Math.max(0.08, best.value) +
+    0.45 * Math.min(1, best.value / 0.32),
+  );
 
   return {
     answer: ALTERNATIVES[best.index],
@@ -945,15 +975,10 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
       const read = readQuestion(ctx, homography, question);
 
       if (!read.answer) {
-        /*
-         * Mantém compatibilidade com o
-         * restante do aplicativo.
-         *
-         * A questão é marcada como incerta
-         * para revisão antes da confirmação.
-         */
+        // Nunca transforma uma leitura ambígua em uma alternativa arbitrária.
+        // O restante do aplicativo ainda espera uma resposta A-D, então A é
+        // mantido apenas como placeholder e a confirmação fica bloqueada.
         answers.push("A");
-
         uncertain.push(question + 1);
       } else {
         answers.push(read.answer);
@@ -1336,10 +1361,13 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                         <button
                           type="button"
                           onClick={confirmResult}
-                          className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-black text-white"
+                          disabled={result.uncertain.length > 0}
+                          className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <CheckCircle2 size={18} />
-                          Confirmar correção
+                          {result.uncertain.length > 0
+                            ? "Revise antes de confirmar"
+                            : "Confirmar correção"}
                         </button>
                       </div>
                     </div>
@@ -1352,9 +1380,10 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                         />
 
                         <p>
-                          Para melhorar a precisão, mantenha os quatro
-                          marcadores pretos visíveis e evite inclinar
-                          excessivamente a folha.
+                          A leitura usa correção de iluminação e contraste local
+                          para tolerar sombras, folha mais escura e marcações
+                          que ultrapassem um pouco a borda. Se houver dúvida,
+                          a confirmação fica bloqueada para evitar um erro.
                         </p>
                       </div>
                     </div>

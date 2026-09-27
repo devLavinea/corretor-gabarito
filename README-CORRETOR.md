@@ -29,3 +29,18 @@ Configure `src/firebase.ts` e ative o login anônimo. Veja `FIREBASE-CONFIGURACA
 ## OMR
 
 A câmera está preparada para a leitura. O algoritmo de reconhecimento das bolhas ainda precisa ser calibrado de acordo com a folha de respostas definitiva. O sistema não usa QR Code.
+
+## Leitura OMR — melhorias de precisão
+
+A versão atual do leitor usa uma estratégia mais robusta para fotografias reais:
+
+- detecção adaptativa dos quatro marcadores, usando contraste local em vez de depender somente de um nível absoluto de preto;
+- leitura das bolhas por contraste em relação ao fundo imediatamente ao redor da própria bolha;
+- análise em núcleo, corpo e coroa externa da bolha;
+- tolerância para preenchimento incompleto e para tinta que ultrapasse um pouco a borda;
+- comparação entre as quatro alternativas da mesma questão;
+- tratamento conservador de duas marcações fortes ou de leitura ambígua;
+- questões sem confiança suficiente não são transformadas automaticamente em uma resposta válida;
+- confirmação final é bloqueada quando existe alguma questão duvidosa.
+
+Isso reduz bastante a dependência da iluminação do ambiente. Nenhum sistema baseado em fotografia pode garantir matematicamente 100% em qualquer imagem (por exemplo, desfoque extremo, marcador oculto ou ausência de informação), por isso o sistema prefere pedir nova leitura em situações realmente ambíguas em vez de inventar uma resposta.
