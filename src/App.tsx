@@ -119,11 +119,8 @@ export default function App() {
   const [page, setPage] = useState<Page>("home");
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
-
   const [students, setStudents] = useState<Student[]>([]);
-
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
-
   const [results, setResults] = useState<Result[]>([]);
 
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -137,9 +134,7 @@ export default function App() {
   // ====================================================
 
   const [title, setTitle] = useState("Avaliação");
-
   const [disciplina, setDisciplina] = useState("Matemática");
-
   const [turmaId, setTurmaId] = useState("");
 
   const [key, setKey] = useState<Answer[]>(Array(10).fill("A") as Answer[]);
@@ -149,11 +144,8 @@ export default function App() {
   // ====================================================
 
   const [search, setSearch] = useState("");
-
   const [studentTurmaId, setStudentTurmaId] = useState("");
-
   const [loadingStudents, setLoadingStudents] = useState(false);
-
   const [savingStudent, setSavingStudent] = useState(false);
 
   const [deletingStudentId, setDeletingStudentId] = useState<string | null>(
@@ -165,7 +157,6 @@ export default function App() {
   // ====================================================
 
   const [savingTurma, setSavingTurma] = useState(false);
-
   const [deletingTurmaId, setDeletingTurmaId] = useState<string | null>(null);
 
   // ====================================================
@@ -191,7 +182,6 @@ export default function App() {
   // ====================================================
 
   const [firebaseReady, setFirebaseReady] = useState(false);
-
   const [error, setError] = useState("");
 
   // ====================================================
@@ -277,16 +267,11 @@ export default function App() {
 
           return {
             id: item.id,
-
             nome: String(raw.nome ?? ""),
-
             turmaId: String(raw.turmaId ?? ""),
-
             turmaNome: String(raw.turmaNome ?? oldTurma),
-
             turmaAno:
               raw.turmaAno !== undefined ? Number(raw.turmaAno) : undefined,
-
             turma: oldTurma || undefined,
           };
         })
@@ -323,23 +308,15 @@ export default function App() {
 
           return {
             id: item.id,
-
             titulo: String(raw.titulo ?? "Avaliação"),
-
             disciplina: String(raw.disciplina ?? ""),
-
             turmaId: String(raw.turmaId ?? ""),
-
             turmaNome: String(raw.turmaNome ?? ""),
-
             turmaAno: Number(raw.turmaAno ?? new Date().getFullYear()),
-
             quantidadeQuestoes: Number(
               raw.quantidadeQuestoes ?? gabarito.length,
             ),
-
             gabarito,
-
             createdAt: raw.createdAt,
           };
         })
@@ -380,12 +357,10 @@ export default function App() {
 
   async function addTurma(nome: string, ano: string) {
     const cleanName = nome.trim();
-
     const numericYear = Number(ano);
 
     if (!cleanName) {
       setError("Informe o nome da turma.");
-
       return;
     }
 
@@ -395,7 +370,6 @@ export default function App() {
       numericYear > 2100
     ) {
       setError("Informe um ano válido para a turma.");
-
       return;
     }
 
@@ -407,7 +381,6 @@ export default function App() {
 
     if (exists) {
       setError("Essa turma já está cadastrada nesse ano.");
-
       return;
     }
 
@@ -433,7 +406,6 @@ export default function App() {
       );
     } catch (err) {
       console.error(err);
-
       setError("Não foi possível cadastrar a turma.");
     } finally {
       setSavingTurma(false);
@@ -453,7 +425,6 @@ export default function App() {
       setError(
         "Não é possível excluir uma turma que ainda possui alunos cadastrados.",
       );
-
       return;
     }
 
@@ -463,7 +434,6 @@ export default function App() {
 
     try {
       setDeletingTurmaId(turma.id);
-
       setError("");
 
       await deleteDoc(doc(db, "turmas", turma.id));
@@ -475,7 +445,6 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
-
       setError("Não foi possível excluir a turma.");
     } finally {
       setDeletingTurmaId(null);
@@ -493,7 +462,6 @@ export default function App() {
 
     if (!cleanName || !turma) {
       setError("Informe o nome do aluno e selecione uma turma.");
-
       return;
     }
 
@@ -524,7 +492,6 @@ export default function App() {
       );
     } catch (err) {
       console.error(err);
-
       setError("Não foi possível cadastrar o aluno.");
     } finally {
       setSavingStudent(false);
@@ -544,7 +511,6 @@ export default function App() {
 
     try {
       setDeletingStudentId(student.id);
-
       setError("");
 
       await deleteDoc(doc(db, "alunos", student.id));
@@ -558,7 +524,6 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
-
       setError("Não foi possível retirar o aluno.");
     } finally {
       setDeletingStudentId(null);
@@ -584,36 +549,26 @@ export default function App() {
 
     if (!title.trim()) {
       setError("Informe o nome da avaliação.");
-
       return;
     }
 
     if (!turma) {
       setError("Selecione uma turma.");
-
       return;
     }
 
     try {
       setSavingAvaliacao(true);
-
       setError("");
 
       const data = {
         titulo: title.trim(),
-
         disciplina: disciplina.trim() || "Não informada",
-
         turmaId: turma.id,
-
         turmaNome: turma.nome,
-
         turmaAno: turma.ano,
-
         quantidadeQuestoes: key.length,
-
         gabarito: key,
-
         createdAt: serverTimestamp(),
       };
 
@@ -633,13 +588,10 @@ export default function App() {
       setAvaliacoes((current) => [avaliacao, ...current]);
 
       setCurrentAvaliacao(avaliacao);
-
       setSelectedStudent(null);
-
       setPage("scan");
     } catch (err) {
       console.error(err);
-
       setError("Não foi possível salvar a avaliação.");
     } finally {
       setSavingAvaliacao(false);
@@ -653,15 +605,8 @@ export default function App() {
   async function saveResult(answers: Answer[]) {
     if (!selectedStudent || !currentAvaliacao) {
       setError("Selecione um aluno antes de corrigir a prova.");
-
       return;
     }
-
-    /*
-      Garante que teremos exatamente
-      a quantidade de respostas do
-      gabarito oficial.
-    */
 
     const normalizedAnswers = currentAvaliacao.gabarito.map(
       (_, index) => answers[index] ?? "A",
@@ -680,29 +625,17 @@ export default function App() {
 
     const result: Result = {
       studentId: selectedStudent.id,
-
       student: selectedStudent.nome,
-
       turma: currentAvaliacao.turmaNome,
-
       turmaId: currentAvaliacao.turmaId,
-
       turmaAno: currentAvaliacao.turmaAno,
-
       avaliacaoId: currentAvaliacao.id,
-
       avaliacaoNome: currentAvaliacao.titulo,
-
       disciplina: currentAvaliacao.disciplina,
-
       answers: normalizedAnswers,
-
       correctAnswers: currentAvaliacao.gabarito,
-
       score,
-
       hits,
-
       total,
     };
 
@@ -726,7 +659,6 @@ export default function App() {
       setPage("results");
     } catch (err) {
       console.error(err);
-
       setError("Não foi possível salvar a correção.");
     } finally {
       setSavingResult(false);
@@ -771,7 +703,7 @@ export default function App() {
 
   function handleExport() {
     try {
-      exportResults(results);
+      exportResults(results, "resultados.xlsx");
     } catch (err) {
       console.error(err);
 
@@ -785,10 +717,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* ================================================
-          HEADER
-      ================================================= */}
-
       <header className="sticky top-0 z-30 border-b bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
           <button
@@ -807,8 +735,6 @@ export default function App() {
               </small>
             </span>
           </button>
-
-          {/* MENU DESKTOP */}
 
           <nav className="hidden items-center gap-1 md:flex">
             <NavButton
@@ -865,8 +791,6 @@ export default function App() {
           </span>
         </div>
 
-        {/* MENU MOBILE */}
-
         <div className="border-t bg-white px-2 py-2 md:hidden">
           <div className="mx-auto grid max-w-7xl grid-cols-6 gap-1">
             <MobileNav
@@ -908,13 +832,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* ================================================
-          CONTEÚDO
-      ================================================= */}
-
       <main className="mx-auto max-w-7xl px-4 py-6">
-        {/* ERRO */}
-
         {error && (
           <div className="mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
             <AlertTriangle className="mt-0.5 shrink-0" size={18} />
@@ -926,10 +844,6 @@ export default function App() {
             </button>
           </div>
         )}
-
-        {/* ==============================================
-            HOME
-        =============================================== */}
 
         {page === "home" && (
           <Home
@@ -945,10 +859,6 @@ export default function App() {
           />
         )}
 
-        {/* ==============================================
-            TURMAS
-        =============================================== */}
-
         {page === "turmas" && (
           <TurmasPage
             turmas={turmas}
@@ -959,10 +869,6 @@ export default function App() {
             onDelete={removeTurma}
           />
         )}
-
-        {/* ==============================================
-            ALUNOS
-        =============================================== */}
 
         {page === "students" && (
           <Students
@@ -981,10 +887,6 @@ export default function App() {
           />
         )}
 
-        {/* ==============================================
-            GABARITO
-        =============================================== */}
-
         {page === "gabarito" && (
           <section className="mx-auto max-w-6xl">
             <div className="mb-6">
@@ -1002,10 +904,6 @@ export default function App() {
           </section>
         )}
 
-        {/* ==============================================
-            NOVA AVALIAÇÃO
-        =============================================== */}
-
         {page === "setup" && (
           <Setup
             title={title}
@@ -1017,14 +915,10 @@ export default function App() {
             turmas={turmas}
             keyAnswers={key}
             updateKey={updateKey}
-            onNext={startEvaluation}
+            onNext={() => void startEvaluation()}
             saving={savingAvaliacao}
           />
         )}
-
-        {/* ==============================================
-            CORREÇÃO
-        =============================================== */}
 
         {page === "scan" && currentAvaliacao && (
           <ScanPage
@@ -1039,10 +933,6 @@ export default function App() {
           />
         )}
 
-        {/* ==============================================
-            RESULTADOS
-        =============================================== */}
-
         {page === "results" && (
           <Results
             results={results}
@@ -1053,14 +943,11 @@ export default function App() {
         )}
       </main>
 
-      {/* ================================================
-          OMR SCANNER
-      ================================================= */}
-
       {cameraOpen && (
         <OMRScanner
           onClose={() => setCameraOpen(false)}
           onDetected={(answers) => {
+            setCameraOpen(false);
             void saveResult(answers);
           }}
         />
@@ -1332,7 +1219,6 @@ function TurmasPage({
   onDelete: (turma: Turma) => Promise<void>;
 }) {
   const [nome, setNome] = useState("");
-
   const [ano, setAno] = useState(String(new Date().getFullYear()));
 
   async function submit(event: FormEvent) {
@@ -1492,7 +1378,6 @@ function Students({
   onGoTurmas: () => void;
 }) {
   const [nome, setNome] = useState("");
-
   const [turmaId, setTurmaId] = useState("");
 
   async function submit(event: FormEvent) {
@@ -1501,6 +1386,7 @@ function Students({
     await onAdd(nome, turmaId);
 
     setNome("");
+    setTurmaId("");
   }
 
   return (
@@ -1691,23 +1577,14 @@ function Setup({
 }: {
   title: string;
   setTitle: (value: string) => void;
-
   disciplina: string;
-
   setDisciplina: (value: string) => void;
-
   turmaId: string;
-
   setTurmaId: (value: string) => void;
-
   turmas: Turma[];
-
   keyAnswers: Answer[];
-
   updateKey: (index: number, value: Answer) => void;
-
   onNext: () => void;
-
   saving: boolean;
 }) {
   return (
@@ -1775,8 +1652,6 @@ function Setup({
           </div>
         )}
 
-        {/* GABARITO OFICIAL */}
-
         <div>
           <div className="mb-3 flex items-center justify-between">
             <span className="text-sm font-bold">Gabarito oficial</span>
@@ -1843,19 +1718,12 @@ function ScanPage({
   saving,
 }: {
   avaliacao: Avaliacao;
-
   selectedStudent: Student | null;
-
   students: Student[];
-
   onSelectStudent: (student: Student) => void;
-
   onOpenCamera: () => void;
-
   onSimulate: () => void;
-
   onBack: () => void;
-
   saving: boolean;
 }) {
   return (
@@ -1884,8 +1752,6 @@ function ScanPage({
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
-        {/* ALUNOS */}
-
         <div className="rounded-3xl border bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -1923,8 +1789,6 @@ function ScanPage({
             )}
           </div>
         </div>
-
-        {/* SCANNER */}
 
         <div className="rounded-3xl border bg-white p-6 shadow-sm">
           <p className="text-sm font-bold text-blue-600">
@@ -2041,8 +1905,6 @@ function Results({
         </button>
       </div>
 
-      {/* FILTROS */}
-
       <div className="mb-5 grid gap-3 rounded-3xl border bg-white p-4 shadow-sm md:grid-cols-3">
         <select
           value={avaliacaoId}
@@ -2081,8 +1943,6 @@ function Results({
           placeholder="Buscar aluno..."
         />
       </div>
-
-      {/* TABELA */}
 
       <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
         {!filtered.length ? (
