@@ -12,6 +12,7 @@ import {
   Check,
   ChevronRight,
   FileSpreadsheet,
+  FileText,
   GraduationCap,
   Home as HomeIcon,
   Plus,
@@ -33,8 +34,10 @@ import { signInAnonymously } from "firebase/auth";
 
 import { db, auth } from "./firebase";
 import { exportResults } from "./exportExcel";
+import GabaritoGenerator from "./GabaritoGenerator";
+import OMRScanner from "./OMRScanner";
 
-type Answer = "A" | "B" | "C" | "D" | "E";
+type Answer = "A" | "B" | "C" | "D";
 
 export type Turma = {
   id: string;
@@ -82,9 +85,16 @@ export type Result = {
   createdAt?: unknown;
 };
 
-type Page = "home" | "turmas" | "students" | "setup" | "scan" | "results";
+type Page =
+  | "home"
+  | "turmas"
+  | "students"
+  | "gabarito"
+  | "setup"
+  | "scan"
+  | "results";
 
-const alternatives: Answer[] = ["A", "B", "C", "D", "E"];
+const alternatives: Answer[] = ["A", "B", "C", "D"];
 
 export default function App() {
   const [page, setPage] = useState<Page>("home");
@@ -538,6 +548,12 @@ export default function App() {
               onClick={() => setPage("students")}
             />
             <NavButton
+              active={page === "gabarito"}
+              icon={<FileText size={17} />}
+              label="Gabarito"
+              onClick={() => setPage("gabarito")}
+            />
+            <NavButton
               active={page === "setup" || page === "scan"}
               icon={<BookOpen size={17} />}
               label="Nova avaliação"
@@ -559,7 +575,7 @@ export default function App() {
         </div>
 
         <div className="border-t bg-white px-3 py-2 md:hidden">
-          <div className="mx-auto grid max-w-7xl grid-cols-5 gap-1">
+          <div className="mx-auto grid max-w-7xl grid-cols-6 gap-1">
             <MobileNav
               icon={<HomeIcon size={17} />}
               label="Início"
@@ -574,6 +590,11 @@ export default function App() {
               icon={<Users size={17} />}
               label="Alunos"
               onClick={() => setPage("students")}
+            />
+            <MobileNav
+              icon={<FileText size={17} />}
+              label="Gabarito"
+              onClick={() => setPage("gabarito")}
             />
             <MobileNav
               icon={<BookOpen size={17} />}
@@ -641,6 +662,22 @@ export default function App() {
           />
         )}
 
+        {page === "gabarito" && (
+          <section className="mx-auto max-w-6xl">
+            <div className="mb-6">
+              <p className="text-sm font-bold text-blue-600">GABARITO</p>
+              <h2 className="mt-1 text-3xl font-black">
+                Folha de respostas para os alunos
+              </h2>
+              <p className="mt-2 max-w-3xl text-slate-500">
+                Este é o mesmo modelo padronizado usado pelo leitor OMR. Baixe,
+                imprima em A4 e entregue aos alunos para preencher.
+              </p>
+            </div>
+            <GabaritoGenerator />
+          </section>
+        )}
+
         {page === "setup" && (
           <Setup
             title={title}
@@ -680,7 +717,12 @@ export default function App() {
         )}
       </main>
 
-      {cameraOpen && <CameraScanner onClose={() => setCameraOpen(false)} />}
+      {cameraOpen && (
+        <OMRScanner
+          onClose={() => setCameraOpen(false)}
+          onDetected={(answers) => void saveResult(answers)}
+        />
+      )}
     </div>
   );
 }
@@ -1206,6 +1248,7 @@ function Setup({
         </p>
       </div>
       <div className="space-y-5 rounded-3xl border bg-white p-5 shadow-sm md:p-7">
+        <GabaritoGenerator />
         <div className="grid gap-4 md:grid-cols-2">
           <label>
             <span className="mb-2 block text-sm font-bold">
@@ -1391,9 +1434,9 @@ function ScanPage({
             </button>
           </div>
           <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            <b>Leitura OMR:</b> a câmera está preparada, mas o reconhecimento
-            das bolhas precisa ser ajustado ao modelo definitivo da folha de
-            respostas.
+            <b>Leitura OMR:</b> use a folha padronizada acima. O sistema usa os
+            marcadores técnicos e as posições fixas das bolhas para identificar
+            as respostas.
           </div>
         </div>
       </div>
@@ -1518,79 +1561,5 @@ function Results({
         )}
       </div>
     </section>
-  );
-}
-
-function CameraScanner({ onClose }: { onClose: () => void }) {
-  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [message, setMessage] = useState("Iniciando câmera...");
-
-  useEffect(() => {
-    let active = true;
-    let localStream: MediaStream | null = null;
-    navigator.mediaDevices
-      ?.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      })
-      .then((mediaStream) => {
-        localStream = mediaStream;
-        if (!active) {
-          mediaStream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        setStream(mediaStream);
-        setMessage("Câmera pronta.");
-      })
-      .catch((err) => {
-        console.error(err);
-        setMessage(
-          "Não foi possível acessar a câmera. Verifique a permissão do navegador.",
-        );
-      });
-    return () => {
-      active = false;
-      localStream?.getTracks().forEach((track) => track.stop());
-    };
-  }, []);
-
-  useEffect(() => {
-    if (video && stream) {
-      video.srcObject = stream;
-      video.play().catch(() => undefined);
-    }
-  }, [video, stream]);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-950 p-4">
-      <div className="mx-auto flex h-full max-w-4xl flex-col">
-        <div className="flex items-center justify-between py-3 text-white">
-          <div>
-            <p className="font-black">Escanear gabarito</p>
-            <p className="text-xs text-slate-300">{message}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="grid h-10 w-10 place-items-center rounded-xl bg-white/10"
-          >
-            <X />
-          </button>
-        </div>
-        <div className="relative flex flex-1 items-center justify-center overflow-hidden rounded-3xl bg-black">
-          <video
-            ref={setVideo}
-            muted
-            playsInline
-            className="max-h-full w-full object-contain"
-          />
-          <div className="pointer-events-none absolute inset-8 rounded-3xl border-2 border-dashed border-white/60" />
-        </div>
-        <p className="py-3 text-center text-xs text-slate-300">
-          Centralize a folha dentro da área marcada. O processamento OMR será
-          aplicado quando o modelo definitivo da folha estiver configurado.
-        </p>
-      </div>
-    </div>
   );
 }
