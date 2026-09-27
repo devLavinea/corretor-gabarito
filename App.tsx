@@ -6,6 +6,7 @@ import {
   Check,
   ChevronRight,
   FileSpreadsheet,
+  FileText,
   GraduationCap,
   Home as HomeIcon,
   Plus,
@@ -78,7 +79,7 @@ export type Result = {
   createdAt?: unknown;
 };
 
-type Page = "home" | "turmas" | "students" | "setup" | "scan" | "results";
+type Page = "home" | "turmas" | "students" | "gabarito" | "setup" | "scan" | "results";
 
 const alternatives: Answer[] = ["A", "B", "C", "D"];
 
@@ -473,6 +474,7 @@ export default function App() {
             <NavButton active={page === "home"} icon={<HomeIcon size={17} />} label="Início" onClick={() => setPage("home")} />
             <NavButton active={page === "turmas"} icon={<GraduationCap size={17} />} label="Turmas" onClick={() => setPage("turmas")} />
             <NavButton active={page === "students"} icon={<Users size={17} />} label="Alunos" onClick={() => setPage("students")} />
+            <NavButton active={page === "gabarito"} icon={<FileText size={17} />} label="Gabarito" onClick={() => setPage("gabarito")} />
             <NavButton active={page === "setup" || page === "scan"} icon={<BookOpen size={17} />} label="Nova avaliação" onClick={() => setPage("setup")} />
             <NavButton active={page === "results"} icon={<FileSpreadsheet size={17} />} label="Resultados" onClick={() => setPage("results")} />
           </nav>
@@ -483,10 +485,11 @@ export default function App() {
         </div>
 
         <div className="border-t bg-white px-3 py-2 md:hidden">
-          <div className="mx-auto grid max-w-7xl grid-cols-5 gap-1">
+          <div className="mx-auto grid max-w-7xl grid-cols-6 gap-1">
             <MobileNav icon={<HomeIcon size={17} />} label="Início" onClick={() => setPage("home")} />
             <MobileNav icon={<GraduationCap size={17} />} label="Turmas" onClick={() => setPage("turmas")} />
             <MobileNav icon={<Users size={17} />} label="Alunos" onClick={() => setPage("students")} />
+            <MobileNav icon={<FileText size={17} />} label="Gabarito" onClick={() => setPage("gabarito")} />
             <MobileNav icon={<BookOpen size={17} />} label="Avaliação" onClick={() => setPage("setup")} />
             <MobileNav icon={<FileSpreadsheet size={17} />} label="Resultados" onClick={() => setPage("results")} />
           </div>
@@ -541,6 +544,19 @@ export default function App() {
             onDelete={removeStudent}
             onGoTurmas={() => setPage("turmas")}
           />
+        )}
+
+        {page === "gabarito" && (
+          <section className="mx-auto max-w-6xl">
+            <div className="mb-6">
+              <p className="text-sm font-bold text-blue-600">GABARITO</p>
+              <h2 className="mt-1 text-3xl font-black">Folha de respostas para os alunos</h2>
+              <p className="mt-2 max-w-3xl text-slate-500">
+                Este é o mesmo modelo padronizado usado pelo leitor OMR. Baixe, imprima em A4 e entregue aos alunos para preencher.
+              </p>
+            </div>
+            <GabaritoGenerator />
+          </section>
         )}
 
         {page === "setup" && (

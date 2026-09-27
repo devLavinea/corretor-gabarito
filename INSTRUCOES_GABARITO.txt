@@ -1,0 +1,29 @@
+CORRETOR MARINEIDE — ABA GABARITO
+
+Foi adicionada uma aba própria chamada Gabarito no menu do sistema.
+
+O modelo da folha é exatamente o padrão usado pelo OMR:
+- A4 vertical
+- título GABARITO
+- 10 questões
+- alternativas A, B, C e D
+- questões 01 a 05 no bloco esquerdo
+- questões 06 a 10 no bloco direito
+- posições das bolhas compatíveis com o OMRScanner
+- marcadores técnicos nos quatro cantos
+
+A aba Gabarito é independente da criação de avaliação.
+
+Downloads disponíveis:
+- PNG
+- PDF A4
+- Word (.docx)
+
+Dependências necessárias no projeto:
+npm install jspdf docx
+
+Depois:
+npm run build
+git add .
+git commit -m "Adiciona aba Gabarito OMR"
+git push origin main
