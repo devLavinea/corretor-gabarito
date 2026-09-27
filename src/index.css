@@ -1,0 +1,2 @@
+@import "tailwindcss";
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#0f172a;background:#f8fafc;font-synthesis:none;text-rendering:optimizeLegibility}*{box-sizing:border-box}body{margin:0;min-width:320px}button,input{font:inherit}.scan-reader video{border-radius:18px}.scan-reader__dashboard_section_csr button{border-radius:12px}

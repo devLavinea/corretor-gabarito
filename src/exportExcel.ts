@@ -1,0 +1,2 @@
+import * as XLSX from 'xlsx';
+export function exportResults(results:{student:string;answers:string[];hits:number;score:number}[],title:string){const rows=results.map(r=>({Aluno:r.student,...Object.fromEntries(r.answers.map((a,i)=>[`Q${i+1}`,a])),Acertos:r.hits,Nota:r.score}));const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Resultados');XLSX.writeFile(wb,`${title.replace(/[^a-z0-9áéíóúãõç ]/gi,'').trim()||'avaliacao'}-resultados.xlsx`)}
