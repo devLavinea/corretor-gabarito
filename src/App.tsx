@@ -117,8 +117,6 @@ export default function App() {
   const [firebaseReady, setFirebaseReady] = useState(false);
   const [error, setError] = useState("");
 
-
-
   useEffect(() => {
     const start = async () => {
       try {

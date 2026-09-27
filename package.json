@@ -11,8 +11,10 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "latest",
+    "docx": "^9.7.2",
     "firebase": "^12.19.0",
     "html5-qrcode": "^2.3.8",
+    "jspdf": "^4.2.1",
     "lucide-react": "^1.48.0",
     "react": "latest",
     "react-dom": "latest",
