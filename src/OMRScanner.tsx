@@ -749,6 +749,8 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   const [loading, setLoading] = useState(false);
 
   const [cameraReady, setCameraReady] = useState(false);
+  const [flashOn, setFlashOn] = useState(false);
+  const [flashSupported, setFlashSupported] = useState(false);
 
   // ====================================================
   // PARAR CÂMERA
@@ -774,6 +776,24 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
     setCameraReady(false);
   }, []);
+
+  async function toggleFlash() {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    const capabilities = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
+    if (!capabilities.torch) {
+      setError("O flash/lanterna não é compatível com esta câmera ou navegador.");
+      return;
+    }
+    try {
+      await track.applyConstraints({ advanced: [{ torch: !flashOn } as MediaTrackConstraintSet] });
+      setFlashOn((value) => !value);
+      setFlashSupported(true);
+    } catch (err) {
+      console.error(err);
+      setError("Não foi possível ativar o flash da câmera.");
+    }
+  }
 
   // ====================================================
   // ABRIR CÂMERA
@@ -813,6 +833,10 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
       });
 
       streamRef.current = media;
+      const track = media.getVideoTracks()[0];
+      const capabilities = track?.getCapabilities() as MediaTrackCapabilities & { torch?: boolean } | undefined;
+      setFlashSupported(Boolean(capabilities?.torch));
+      setFlashOn(false);
 
       setStream(media);
 
@@ -1158,14 +1182,19 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={close}
-                className="grid h-11 w-11 place-items-center rounded-full bg-black/60 text-white backdrop-blur-md"
-                aria-label="Fechar câmera"
-              >
-                <X size={22} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => void toggleFlash()} disabled={!flashSupported} className={`grid h-11 w-11 place-items-center rounded-full backdrop-blur-md ${flashOn ? "bg-amber-300 text-slate-900" : "bg-black/60 text-white disabled:opacity-40"}`} aria-label="Ativar flash">
+                  <span className="text-lg">⚡</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={close}
+                  className="grid h-11 w-11 place-items-center rounded-full bg-black/60 text-white backdrop-blur-md"
+                  aria-label="Fechar câmera"
+                >
+                  <X size={22} />
+                </button>
+              </div>
             </div>
 
             {/* ==================================================
@@ -1341,7 +1370,13 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                         </div>
                       )}
 
-                      {result.uncertain.length === 0 && (
+                      {result.uncertain.length === 0 && result.confidence < 0.999 && (
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                          <b>Dica:</b> a leitura não chegou a 100%. Tente um local melhor iluminado ou ative o flash/lanterna antes de fotografar novamente.
+                        </div>
+                      )}
+
+                      {result.uncertain.length === 0 && result.confidence >= 0.999 && (
                         <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
                           Todas as questões foram identificadas com diferença
                           suficiente entre as alternativas.
