@@ -12,6 +12,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "latest",
     "firebase": "^12.19.0",
+    "html5-qrcode": "^2.3.8",
     "lucide-react": "^1.48.0",
     "react": "latest",
     "react-dom": "latest",
