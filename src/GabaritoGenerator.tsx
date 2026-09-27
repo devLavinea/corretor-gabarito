@@ -11,9 +11,6 @@ export const ALTERNATIVES: GabaritoAnswer[] = ["A", "B", "C", "D"];
  * ============================================================
  * PADRÃO OFICIAL DO GABARITO / OMR
  * ============================================================
- *
- * O gerador do gabarito e o leitor OMR devem utilizar
- * exatamente estas mesmas coordenadas.
  */
 export const OMR_TEMPLATE = {
   width: 1123,
@@ -339,6 +336,10 @@ export async function downloadGabaritoPdf() {
     reader.readAsDataURL(png);
   });
 
+  /**
+   * PDF permanece horizontal porque o arquivo
+   * do gabarito OMR é uma faixa horizontal.
+   */
   const pdf = new jsPDF({
     orientation: "landscape",
     unit: "mm",
@@ -374,42 +375,78 @@ export async function downloadGabaritoPdf() {
  * ============================================================
  * WORD
  * ============================================================
+ *
+ * A página do Word será RETRATO.
+ *
+ * O gabarito continua sendo uma faixa HORIZONTAL,
+ * mas ficará posicionada na PARTE INFERIOR da página.
  */
 export async function downloadGabaritoWord() {
   const png = await svgToPngBlob(createGabaritoSvg(), 2);
 
   const bytes = new Uint8Array(await png.arrayBuffer());
 
+  /**
+   * A4 RETRATO.
+   *
+   * Word usa DXA (twips):
+   *
+   * A4:
+   * largura  = 11906
+   * altura   = 16838
+   */
   const document = new Document({
     sections: [
       {
         properties: {
           page: {
             size: {
-              width: 16838,
-              height: 11906,
+              width: 11906,
+              height: 16838,
             },
 
             margin: {
-              top: 0,
-              right: 0,
-              bottom: 0,
-              left: 0,
+              top: 720,
+              right: 720,
+              bottom: 720,
+              left: 720,
             },
           },
         },
 
         children: [
+          /**
+           * Espaço flexível antes do gabarito.
+           *
+           * Como o gabarito precisa ficar no final
+           * da página, usamos um parágrafo grande
+           * antes da imagem.
+           */
           new Paragraph({
+            spacing: {
+              before: 9000,
+            },
+          }),
+
+          /**
+           * Gabarito no final da página.
+           */
+          new Paragraph({
+            alignment: 1,
+
             children: [
               new ImageRun({
                 data: bytes,
 
                 transformation: {
-                  width: 842,
+                  /**
+                   * Largura aproximada de 18 cm.
+                   * Mantém o gabarito horizontal.
+                   */
+                  width: 680,
 
                   height: Math.round(
-                    842 * (OMR_TEMPLATE.height / OMR_TEMPLATE.width),
+                    680 * (OMR_TEMPLATE.height / OMR_TEMPLATE.width),
                   ),
                 },
 
@@ -424,7 +461,7 @@ export async function downloadGabaritoWord() {
 
   const blob = await Packer.toBlob(document);
 
-  downloadBlob(blob, "gabarito-marineide-horizontal.docx");
+  downloadBlob(blob, "gabarito-marineide-retrato.docx");
 }
 
 /**
@@ -441,12 +478,14 @@ export default function GabaritoGenerator() {
         <div>
           <p className="text-sm font-bold text-blue-600">MODELO OMR</p>
 
-          <h3 className="mt-1 text-xl font-black">Gabarito horizontal</h3>
+          <h3 className="mt-1 text-xl font-black">
+            Gabarito no final da página
+          </h3>
 
           <p className="mt-1 max-w-xl text-sm leading-6 text-slate-500">
-            Faixa horizontal para ser colocada na parte inferior da prova. São
-            10 questões, com alternativas A–D, sendo 01–05 no bloco esquerdo e
-            06–10 no bloco direito.
+            Página em retrato, com o gabarito horizontal posicionado na parte
+            inferior. São 10 questões, com alternativas A–D, sendo 01–05 no
+            bloco esquerdo e 06–10 no bloco direito.
           </p>
         </div>
 

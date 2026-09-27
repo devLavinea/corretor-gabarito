@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+
 import {
   Camera,
   CheckCircle2,
@@ -16,40 +17,62 @@ type Props = {
 
 // ======================================================
 // PADRÃO OMR
-// Deve ser EXATAMENTE igual ao GabaritoGenerator.tsx
+// DEVE SER EXATAMENTE IGUAL AO GABARITOGENERATOR.TSX
 // ======================================================
 
-const WIDTH = 1123;
-const HEIGHT = 794;
+const OMR_TEMPLATE = {
+  width: 1123,
+  height: 380,
+
+  marker: {
+    size: 18,
+    offset: 20,
+  },
+
+  left: {
+    questionX: 155,
+    bubbleStartX: 220,
+  },
+
+  right: {
+    questionX: 665,
+    bubbleStartX: 730,
+  },
+
+  bubble: {
+    radius: 18,
+    step: 68,
+  },
+
+  rows: {
+    startY: 145,
+    stepY: 45,
+  },
+} as const;
 
 const ALTERNATIVES: OMRAnswer[] = ["A", "B", "C", "D"];
-
-const LEFT_X = 150;
-const RIGHT_X = 500;
-
-const BUBBLE_STEP = 62;
-const BUBBLE_OFFSET_X = 36;
-
-const ROW_START = 330;
-const ROW_STEP = 125;
-
-const BUBBLE_RADIUS = 20;
 
 // ======================================================
 // POSIÇÃO DAS BOLHAS
 // ======================================================
 
 function getBubbleCenter(questionIndex: number, alternativeIndex: number) {
-  const isRight = questionIndex >= 5;
+  const question = questionIndex + 1;
 
-  const row = isRight ? questionIndex - 5 : questionIndex;
+  if (question < 1 || question > 10) {
+    throw new Error("Questão inválida.");
+  }
 
-  const baseX = isRight ? RIGHT_X : LEFT_X;
+  const isRight = question >= 6;
+
+  const row = isRight ? question - 6 : question - 1;
+
+  const group = isRight ? OMR_TEMPLATE.right : OMR_TEMPLATE.left;
 
   return {
-    x: baseX + BUBBLE_OFFSET_X + alternativeIndex * BUBBLE_STEP,
+    x: group.bubbleStartX + alternativeIndex * OMR_TEMPLATE.bubble.step,
 
-    y: ROW_START + row * ROW_STEP,
+    y: OMR_TEMPLATE.rows.startY + row * OMR_TEMPLATE.rows.stepY,
   };
 }
 
@@ -92,12 +115,20 @@ function measureBubble(
   let dark = 0;
   let total = 0;
 
+  /*
+   * Mede apenas o interior da bolha.
+   *
+   * Isso evita que a borda preta da bolha
+   * seja confundida com uma marca preenchida.
+   */
   const innerRadius = radius * 0.62;
+
   const innerRadiusSquared = innerRadius * innerRadius;
 
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
       const dx = px + 0.5 - radius;
+
       const dy = py + 0.5 - radius;
 
       if (dx * dx + dy * dy > innerRadiusSquared) {
@@ -120,6 +151,68 @@ function measureBubble(
 }
 
 // ======================================================
+// RECORTA O GABARITO
+// ======================================================
+//
+// O novo Word possui:
+// página A4 RETRATO
+// e o gabarito fica na parte INFERIOR.
+//
+// O scanner recebe a foto da página inteira.
+// Aqui procuramos a faixa inferior onde está
+// o gabarito.
+//
+// ======================================================
+
+function cropGabaritoFromPage(
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+) {
+  const canvas = document.createElement("canvas");
+
+  /*
+   * O gabarito ocupa aproximadamente os
+   * últimos 30% da página.
+   *
+   * Usamos uma área um pouco maior para
+   * tolerar diferenças de fotografia.
+   */
+  const cropTop = Math.round(sourceHeight * 0.68);
+
+  const cropHeight = sourceHeight - cropTop;
+
+  if (cropHeight <= 0) {
+    throw new Error("Não foi possível localizar a região do gabarito.");
+  }
+
+  canvas.width = sourceWidth;
+  canvas.height = cropHeight;
+
+  const ctx = canvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+
+  if (!ctx) {
+    throw new Error("Não foi possível preparar a imagem.");
+  }
+
+  ctx.drawImage(
+    source,
+    0,
+    cropTop,
+    sourceWidth,
+    cropHeight,
+    0,
+    0,
+    sourceWidth,
+    cropHeight,
+  );
+
+  return canvas;
+}
+
+// ======================================================
 // LEITURA OMR
 // ======================================================
 
@@ -134,15 +227,15 @@ function readAnswers(ctx: CanvasRenderingContext2D) {
     for (let alternative = 0; alternative < 4; alternative++) {
       const position = getBubbleCenter(question, alternative);
 
-      const scaleX = ctx.canvas.width / WIDTH;
+      const scaleX = ctx.canvas.width / OMR_TEMPLATE.width;
 
-      const scaleY = ctx.canvas.height / HEIGHT;
+      const scaleY = ctx.canvas.height / OMR_TEMPLATE.height;
 
       const x = position.x * scaleX;
 
       const y = position.y * scaleY;
 
-      const radius = BUBBLE_RADIUS * Math.min(scaleX, scaleY) * 1.15;
+      const radius = OMR_TEMPLATE.bubble.radius * Math.min(scaleX, scaleY);
 
       scores.push(measureBubble(ctx, x, y, radius));
     }
@@ -158,29 +251,30 @@ function readAnswers(ctx: CanvasRenderingContext2D) {
     const second = ordered[1];
 
     /*
-      Uma marca preenchida precisa ter:
-
-      1. quantidade suficiente de pixels escuros
-      2. diferença razoável para a segunda alternativa
-    */
-
+     * Marca válida:
+     *
+     * - quantidade mínima de pixels escuros
+     * - diferença mínima para a segunda opção
+     */
     if (best.value >= 0.12 && best.value - second.value >= 0.045) {
       answers.push(ALTERNATIVES[best.index]);
 
       confidence += Math.min(1, (best.value - second.value) / 0.25);
     } else {
       /*
-        Quando não há leitura clara,
-        usamos A como fallback.
-
-        Isso evita quebrar o sistema,
-        mas a professora verá a leitura
-        antes de confirmar.
-      */
-
+       * Não transforma questão vazia
+       * em alternativa A.
+       *
+       * Mantemos A apenas para compatibilidade
+       * com o tipo de resposta, mas a confiança
+       * dessa questão fica baixa.
+       *
+       * O ideal é a professora revisar
+       * antes de confirmar.
+       */
       answers.push("A");
 
-      confidence += 0.25;
+      confidence += 0;
     }
   }
 
@@ -232,13 +326,16 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
             facingMode: {
               ideal: "environment",
             },
+
             width: {
               ideal: 1920,
             },
+
             height: {
               ideal: 1080,
             },
           },
+
           audio: false,
         });
 
@@ -321,9 +418,13 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
     const scale = Math.min(1, maxWidth / width);
 
-    canvas.width = Math.round(width * scale);
+    const scaledWidth = Math.round(width * scale);
 
-    canvas.height = Math.round(height * scale);
+    const scaledHeight = Math.round(height * scale);
+
+    canvas.width = scaledWidth;
+
+    canvas.height = scaledHeight;
 
     const ctx = canvas.getContext("2d", {
       willReadFrequently: true,
@@ -335,13 +436,37 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
       return;
     }
 
-    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(source, 0, 0, scaledWidth, scaledHeight);
 
-    const image = canvas.toDataURL("image/jpeg", 0.9);
+    /*
+     * Se a imagem é uma página A4 inteira,
+     * extraímos a faixa inferior.
+     */
+    const gabaritoCanvas = cropGabaritoFromPage(
+      canvas,
+      scaledWidth,
+      scaledHeight,
+    );
 
-    setPreview(image);
+    const gabaritoCtx = gabaritoCanvas.getContext("2d", {
+      willReadFrequently: true,
+    });
 
-    const read = readAnswers(ctx);
+    if (!gabaritoCtx) {
+      setError("Não foi possível analisar o gabarito.");
+
+      return;
+    }
+
+    /*
+     * Mostra somente a região analisada.
+     */
+    setPreview(gabaritoCanvas.toDataURL("image/jpeg", 0.92));
+
+    /*
+     * Leitura OMR.
+     */
+    const read = readAnswers(gabaritoCtx);
 
     setResult(read);
   }
@@ -364,6 +489,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
     try {
       processImage(video);
+
       stopCamera();
     } catch (err) {
       console.error(err);
@@ -437,6 +563,10 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     setError("");
   }
 
+  // ====================================================
+  // INTERFACE
+  // ====================================================
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 sm:p-6">
       <div className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
@@ -452,6 +582,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
           </div>
 
           <button
+            type="button"
             onClick={() => {
               stopCamera();
               onClose();
@@ -472,7 +603,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
               {preview ? (
                 <img
                   src={preview}
-                  alt="Gabarito fotografado"
+                  alt="Região do gabarito analisada"
                   className="block max-h-[58vh] w-full object-contain"
                 />
               ) : (
@@ -496,6 +627,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
             <div className="flex flex-wrap gap-2">
               {!preview && (
                 <button
+                  type="button"
                   onClick={capture}
                   disabled={loading || !stream}
                   className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-40"
@@ -507,6 +639,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
               )}
 
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="inline-flex items-center gap-2 rounded-2xl border bg-white px-5 py-3 font-bold"
               >
@@ -516,6 +649,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
               {preview && (
                 <button
+                  type="button"
                   onClick={reset}
                   className="inline-flex items-center gap-2 rounded-2xl border bg-white px-5 py-3 font-bold"
                 >
@@ -536,8 +670,9 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
             <div className="rounded-2xl border bg-slate-50 p-4 text-sm leading-6 text-slate-600">
               <b className="text-slate-900">Para uma boa leitura:</b> fotografe
-              o gabarito inteiro, sem cortar as bordas, mantendo a folha reta e
-              com boa iluminação.
+              a página inteira, principalmente a parte inferior onde está o
+              gabarito. Mantenha a folha reta, sem cortar os quatro marcadores
+              pretos e com boa iluminação.
             </div>
           </div>
 
@@ -548,7 +683,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
             {!result ? (
               <p className="mt-3 text-sm leading-6 text-slate-500">
-                Fotografe ou envie uma imagem do gabarito para analisar as 10
+                Fotografe ou envie uma imagem da prova para analisar as 10
                 questões.
               </p>
             ) : (
@@ -576,6 +711,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                 </div>
 
                 <button
+                  type="button"
                   onClick={confirmResult}
                   className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-black text-white"
                 >
