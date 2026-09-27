@@ -5,7 +5,9 @@ import {
   CheckCircle2,
   Image as ImageIcon,
   RotateCcw,
+  ScanLine,
   X,
+  ZoomIn,
 } from "lucide-react";
 
 export type OMRAnswer = "A" | "B" | "C" | "D";
@@ -15,9 +17,38 @@ type Props = {
   onDetected: (answers: OMRAnswer[]) => void;
 };
 
+type Point = {
+  x: number;
+  y: number;
+};
+
+type MarkerSet = {
+  topLeft: Point;
+  topRight: Point;
+  bottomLeft: Point;
+  bottomRight: Point;
+};
+
+type Homography = {
+  h11: number;
+  h12: number;
+  h13: number;
+  h21: number;
+  h22: number;
+  h23: number;
+  h31: number;
+  h32: number;
+};
+
+type AnswerResult = {
+  answer: OMRAnswer | null;
+  confidence: number;
+  scores: number[];
+};
+
 // ======================================================
 // PADRÃO OMR
-// DEVE SER EXATAMENTE IGUAL AO GABARITOGENERATOR.TSX
+// EXATAMENTE IGUAL AO GABARITOGENERATOR.TSX
 // ======================================================
 
 const OMR_TEMPLATE = {
@@ -52,16 +83,17 @@ const OMR_TEMPLATE = {
 
 const ALTERNATIVES: OMRAnswer[] = ["A", "B", "C", "D"];
 
+const BLACK_THRESHOLD = 105;
+
 // ======================================================
 // POSIÇÃO DAS BOLHAS
 // ======================================================
 
-function getBubbleCenter(questionIndex: number, alternativeIndex: number) {
+function getBubbleCenter(
+  questionIndex: number,
+  alternativeIndex: number,
+): Point {
   const question = questionIndex + 1;
-
-  if (question < 1 || question > 10) {
-    throw new Error("Questão inválida.");
-  }
 
   const isRight = question >= 6;
 
@@ -77,7 +109,7 @@ function getBubbleCenter(questionIndex: number, alternativeIndex: number) {
 }
 
 // ======================================================
-// CINZA / ESCURIDÃO
+// CINZA
 // ======================================================
 
 function getGray(data: Uint8ClampedArray, index: number) {
@@ -87,19 +119,439 @@ function getGray(data: Uint8ClampedArray, index: number) {
 }
 
 // ======================================================
-// ANALISA UMA BOLHA
+// DISTÂNCIA
+// ======================================================
+
+function distance(a: Point, b: Point) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+// ======================================================
+// RESOLVE SISTEMA LINEAR
+// ======================================================
+
+function solveLinearSystem(matrix: number[][], values: number[]) {
+  const n = values.length;
+
+  const a = matrix.map((row, index) => [...row, values[index]]);
+
+  for (let column = 0; column < n; column++) {
+    let pivot = column;
+
+    for (let row = column + 1; row < n; row++) {
+      if (Math.abs(a[row][column]) > Math.abs(a[pivot][column])) {
+        pivot = row;
+      }
+    }
+
+    if (Math.abs(a[pivot][column]) < 1e-10) {
+      throw new Error("Não foi possível corrigir a perspectiva.");
+    }
+
+    [a[column], a[pivot]] = [a[pivot], a[column]];
+
+    const divisor = a[column][column];
+
+    for (let j = column; j <= n; j++) {
+      a[column][j] /= divisor;
+    }
+
+    for (let row = 0; row < n; row++) {
+      if (row === column) continue;
+
+      const factor = a[row][column];
+
+      for (let j = column; j <= n; j++) {
+        a[row][j] -= factor * a[column][j];
+      }
+    }
+  }
+
+  return a.map((row) => row[n]);
+}
+
+// ======================================================
+// HOMOGRAFIA
+// ======================================================
+
+function calculateHomography(
+  source: Point[],
+  destination: Point[],
+): Homography {
+  if (source.length !== 4 || destination.length !== 4) {
+    throw new Error(
+      "São necessários quatro pontos para corrigir a perspectiva.",
+    );
+  }
+
+  const matrix: number[][] = [];
+  const values: number[] = [];
+
+  for (let i = 0; i < 4; i++) {
+    const s = source[i];
+    const d = destination[i];
+
+    matrix.push([s.x, s.y, 1, 0, 0, 0, -d.x * s.x, -d.x * s.y]);
+
+    values.push(d.x);
+
+    matrix.push([0, 0, 0, s.x, s.y, 1, -d.y * s.x, -d.y * s.y]);
+
+    values.push(d.y);
+  }
+
+  const result = solveLinearSystem(matrix, values);
+
+  return {
+    h11: result[0],
+    h12: result[1],
+    h13: result[2],
+    h21: result[3],
+    h22: result[4],
+    h23: result[5],
+    h31: result[6],
+    h32: result[7],
+  };
+}
+
+// ======================================================
+// APLICA HOMOGRAFIA
+// ======================================================
+
+function transformPoint(point: Point, homography: Homography): Point {
+  const denominator = homography.h31 * point.x + homography.h32 * point.y + 1;
+
+  return {
+    x:
+      (homography.h11 * point.x + homography.h12 * point.y + homography.h13) /
+      denominator,
+
+    y:
+      (homography.h21 * point.x + homography.h22 * point.y + homography.h23) /
+      denominator,
+  };
+}
+
+// ======================================================
+// DETECÇÃO DOS MARCADORES
+// ======================================================
+//
+// Procura quadrados pretos semelhantes aos quatro
+// marcadores existentes no gabarito.
+//
+// Não depende mais da posição fixa da página.
+// ======================================================
+
+function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
+  const ctx = canvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+
+  if (!ctx) return null;
+
+  const maxDimension = 1400;
+
+  const scale = Math.min(
+    1,
+    maxDimension / Math.max(canvas.width, canvas.height),
+  );
+
+  const width = Math.max(1, Math.round(canvas.width * scale));
+
+  const height = Math.max(1, Math.round(canvas.height * scale));
+
+  const scanCanvas = document.createElement("canvas");
+
+  scanCanvas.width = width;
+  scanCanvas.height = height;
+
+  const scanCtx = scanCanvas.getContext("2d", {
+    willReadFrequently: true,
+  });
+
+  if (!scanCtx) return null;
+
+  scanCtx.drawImage(canvas, 0, 0, width, height);
+
+  const image = scanCtx.getImageData(0, 0, width, height);
+
+  const data = image.data;
+
+  const visited = new Uint8Array(width * height);
+
+  const candidates: {
+    center: Point;
+    area: number;
+    width: number;
+    height: number;
+    fill: number;
+  }[] = [];
+
+  const minSize = Math.max(6, Math.round(width * 0.006));
+
+  const maxSize = Math.max(45, Math.round(width * 0.12));
+
+  const indexOf = (x: number, y: number) => y * width + x;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const start = indexOf(x, y);
+
+      if (visited[start]) continue;
+
+      const pixel = start * 4;
+
+      const gray = getGray(data, pixel);
+
+      if (gray > BLACK_THRESHOLD) {
+        visited[start] = 1;
+        continue;
+      }
+
+      const queue: number[] = [start];
+
+      visited[start] = 1;
+
+      let minX = x;
+      let maxX = x;
+      let minY = y;
+      let maxY = y;
+      let count = 0;
+
+      let queueIndex = 0;
+
+      while (queueIndex < queue.length) {
+        const current = queue[queueIndex++];
+
+        const cy = Math.floor(current / width);
+        const cx = current - cy * width;
+
+        count++;
+
+        minX = Math.min(minX, cx);
+        maxX = Math.max(maxX, cx);
+        minY = Math.min(minY, cy);
+        maxY = Math.max(maxY, cy);
+
+        if (maxX - minX > maxSize || maxY - minY > maxSize) {
+          continue;
+        }
+
+        const neighbors = [
+          [cx + 1, cy],
+          [cx - 1, cy],
+          [cx, cy + 1],
+          [cx, cy - 1],
+        ];
+
+        for (const [nx, ny] of neighbors) {
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
+            continue;
+          }
+
+          const next = indexOf(nx, ny);
+
+          if (visited[next]) continue;
+
+          const nextPixel = next * 4;
+
+          const nextGray = getGray(data, nextPixel);
+
+          if (nextGray <= BLACK_THRESHOLD) {
+            visited[next] = 1;
+            queue.push(next);
+          } else {
+            visited[next] = 1;
+          }
+        }
+      }
+
+      const componentWidth = maxX - minX + 1;
+
+      const componentHeight = maxY - minY + 1;
+
+      if (
+        componentWidth < minSize ||
+        componentHeight < minSize ||
+        componentWidth > maxSize ||
+        componentHeight > maxSize
+      ) {
+        continue;
+      }
+
+      const ratio = componentWidth / componentHeight;
+
+      if (ratio < 0.55 || ratio > 1.8) {
+        continue;
+      }
+
+      const boundingArea = componentWidth * componentHeight;
+
+      const fill = count / boundingArea;
+
+      if (fill < 0.35) continue;
+
+      candidates.push({
+        center: {
+          x: (minX + maxX) / 2 / scale,
+
+          y: (minY + maxY) / 2 / scale,
+        },
+
+        area: boundingArea / (scale * scale),
+
+        width: componentWidth / scale,
+
+        height: componentHeight / scale,
+
+        fill,
+      });
+    }
+  }
+
+  if (candidates.length < 4) {
+    return null;
+  }
+
+  /*
+   * Os marcadores devem possuir tamanho parecido.
+   * Ordenamos por proximidade do tamanho mediano.
+   */
+  const sortedByArea = [...candidates].sort((a, b) => a.area - b.area);
+
+  const middle = sortedByArea[Math.floor(sortedByArea.length / 2)];
+
+  const sizeTolerance = 3.2;
+
+  const filtered = candidates.filter(
+    (candidate) =>
+      candidate.area >= middle.area / sizeTolerance &&
+      candidate.area <= middle.area * sizeTolerance,
+  );
+
+  /*
+   * Precisamos de quatro pontos formando
+   * aproximadamente um quadrilátero.
+   *
+   * Tentamos várias combinações entre candidatos
+   * e escolhemos a que melhor representa os quatro
+   * cantos do gabarito.
+   */
+  const pool = filtered
+    .sort(
+      (a, b) => Math.abs(a.area - middle.area) - Math.abs(b.area - middle.area),
+    )
+    .slice(0, 30);
+
+  let best: {
+    markers: MarkerSet;
+    score: number;
+  } | null = null;
+
+  for (let a = 0; a < pool.length; a++) {
+    for (let b = a + 1; b < pool.length; b++) {
+      for (let c = b + 1; c < pool.length; c++) {
+        for (let d = c + 1; d < pool.length; d++) {
+          const points = [
+            pool[a].center,
+            pool[b].center,
+            pool[c].center,
+            pool[d].center,
+          ];
+
+          const center = {
+            x: points.reduce((sum, point) => sum + point.x, 0) / 4,
+
+            y: points.reduce((sum, point) => sum + point.y, 0) / 4,
+          };
+
+          const top = points
+            .filter((point) => point.y <= center.y)
+            .sort((p1, p2) => p1.x - p2.x);
+
+          const bottom = points
+            .filter((point) => point.y > center.y)
+            .sort((p1, p2) => p1.x - p2.x);
+
+          if (top.length !== 2 || bottom.length !== 2) {
+            continue;
+          }
+
+          const topLeft = top[0];
+          const topRight = top[1];
+          const bottomLeft = bottom[0];
+          const bottomRight = bottom[1];
+
+          const topDistance = distance(topLeft, topRight);
+
+          const bottomDistance = distance(bottomLeft, bottomRight);
+
+          const leftDistance = distance(topLeft, bottomLeft);
+
+          const rightDistance = distance(topRight, bottomRight);
+
+          const horizontal = (topDistance + bottomDistance) / 2;
+
+          const vertical = (leftDistance + rightDistance) / 2;
+
+          if (horizontal < 100 || vertical < 30) {
+            continue;
+          }
+
+          const aspect = horizontal / vertical;
+
+          /*
+           * O gabarito é aproximadamente 1123/380 = 2.95.
+           *
+           * Aceitamos bastante distorção para não
+           * rejeitar uma foto inclinada.
+           */
+          const aspectError = Math.abs(Math.log(aspect / 2.95));
+
+          if (aspectError > 1.25) {
+            continue;
+          }
+
+          const area = horizontal * vertical;
+
+          const score =
+            aspectError * 5 +
+            Math.abs(topDistance - bottomDistance) / horizontal +
+            Math.abs(leftDistance - rightDistance) / vertical;
+
+          if (!best || score < best.score) {
+            best = {
+              markers: {
+                topLeft,
+                topRight,
+                bottomLeft,
+                bottomRight,
+              },
+              score,
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return best?.markers ?? null;
+}
+
+// ======================================================
+// MEDE A BOLHA
 // ======================================================
 
 function measureBubble(
   ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
+  center: Point,
   radius: number,
 ) {
-  const x = Math.round(cx - radius);
-  const y = Math.round(cy - radius);
+  const size = Math.max(8, Math.round(radius * 2));
 
-  const size = Math.round(radius * 2);
+  const x = Math.round(center.x - size / 2);
+
+  const y = Math.round(center.y - size / 2);
 
   if (
     x < 0 ||
@@ -116,30 +568,31 @@ function measureBubble(
   let total = 0;
 
   /*
-   * Mede apenas o interior da bolha.
-   *
-   * Isso evita que a borda preta da bolha
-   * seja confundida com uma marca preenchida.
+   * Usa somente a parte interna.
+   * Assim a borda impressa da bolha não
+   * é confundida com preenchimento.
    */
-  const innerRadius = radius * 0.62;
+  const innerRadius = radius * 0.58;
 
-  const innerRadiusSquared = innerRadius * innerRadius;
+  const centerPoint = size / 2;
+
+  const innerSquared = innerRadius * innerRadius;
 
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
-      const dx = px + 0.5 - radius;
+      const dx = px + 0.5 - centerPoint;
 
-      const dy = py + 0.5 - radius;
+      const dy = py + 0.5 - centerPoint;
 
-      if (dx * dx + dy * dy > innerRadiusSquared) {
+      if (dx * dx + dy * dy > innerSquared) {
         continue;
       }
 
       const index = (py * size + px) * 4;
 
-      const value = getGray(image.data, index);
+      const gray = getGray(image.data, index);
 
-      if (value < 150) {
+      if (gray < 155) {
         dark++;
       }
 
@@ -151,136 +604,97 @@ function measureBubble(
 }
 
 // ======================================================
-// RECORTA O GABARITO
-// ======================================================
-//
-// O novo Word possui:
-// página A4 RETRATO
-// e o gabarito fica na parte INFERIOR.
-//
-// O scanner recebe a foto da página inteira.
-// Aqui procuramos a faixa inferior onde está
-// o gabarito.
-//
+// LEITURA DE UMA QUESTÃO
 // ======================================================
 
-function cropGabaritoFromPage(
-  source: CanvasImageSource,
-  sourceWidth: number,
-  sourceHeight: number,
-) {
-  const canvas = document.createElement("canvas");
+function readQuestion(
+  ctx: CanvasRenderingContext2D,
+  homography: Homography,
+  questionIndex: number,
+): AnswerResult {
+  const scores: number[] = [];
 
-  /*
-   * O gabarito ocupa aproximadamente os
-   * últimos 30% da página.
-   *
-   * Usamos uma área um pouco maior para
-   * tolerar diferenças de fotografia.
-   */
-  const cropTop = Math.round(sourceHeight * 0.68);
+  for (let alternative = 0; alternative < 4; alternative++) {
+    const templatePoint = getBubbleCenter(questionIndex, alternative);
 
-  const cropHeight = sourceHeight - cropTop;
-
-  if (cropHeight <= 0) {
-    throw new Error("Não foi possível localizar a região do gabarito.");
-  }
-
-  canvas.width = sourceWidth;
-  canvas.height = cropHeight;
-
-  const ctx = canvas.getContext("2d", {
-    willReadFrequently: true,
-  });
-
-  if (!ctx) {
-    throw new Error("Não foi possível preparar a imagem.");
-  }
-
-  ctx.drawImage(
-    source,
-    0,
-    cropTop,
-    sourceWidth,
-    cropHeight,
-    0,
-    0,
-    sourceWidth,
-    cropHeight,
-  );
-
-  return canvas;
-}
-
-// ======================================================
-// LEITURA OMR
-// ======================================================
-
-function readAnswers(ctx: CanvasRenderingContext2D) {
-  const answers: OMRAnswer[] = [];
-
-  let confidence = 0;
-
-  for (let question = 0; question < 10; question++) {
-    const scores: number[] = [];
-
-    for (let alternative = 0; alternative < 4; alternative++) {
-      const position = getBubbleCenter(question, alternative);
-
-      const scaleX = ctx.canvas.width / OMR_TEMPLATE.width;
-
-      const scaleY = ctx.canvas.height / OMR_TEMPLATE.height;
-
-      const x = position.x * scaleX;
-
-      const y = position.y * scaleY;
-
-      const radius = OMR_TEMPLATE.bubble.radius * Math.min(scaleX, scaleY);
-
-      scores.push(measureBubble(ctx, x, y, radius));
-    }
-
-    const ordered = scores
-      .map((value, index) => ({
-        value,
-        index,
-      }))
-      .sort((a, b) => b.value - a.value);
-
-    const best = ordered[0];
-    const second = ordered[1];
+    const center = transformPoint(templatePoint, homography);
 
     /*
-     * Marca válida:
-     *
-     * - quantidade mínima de pixels escuros
-     * - diferença mínima para a segunda opção
+     * Estima o tamanho real da bolha usando
+     * a distância entre A e B.
      */
-    if (best.value >= 0.12 && best.value - second.value >= 0.045) {
-      answers.push(ALTERNATIVES[best.index]);
+    const pointA = transformPoint(
+      getBubbleCenter(questionIndex, 0),
+      homography,
+    );
 
-      confidence += Math.min(1, (best.value - second.value) / 0.25);
-    } else {
-      /*
-       * Não transforma questão vazia
-       * em alternativa A.
-       *
-       * Mantemos A apenas para compatibilidade
-       * com o tipo de resposta, mas a confiança
-       * dessa questão fica baixa.
-       *
-       * O ideal é a professora revisar
-       * antes de confirmar.
-       */
-      answers.push("A");
+    const pointB = transformPoint(
+      getBubbleCenter(questionIndex, 1),
+      homography,
+    );
 
-      confidence += 0;
-    }
+    const bubbleStep = distance(pointA, pointB);
+
+    const radius = Math.max(
+      4,
+      bubbleStep * (OMR_TEMPLATE.bubble.radius / OMR_TEMPLATE.bubble.step),
+    );
+
+    scores.push(measureBubble(ctx, center, radius));
   }
 
+  const ordered = scores
+    .map((value, index) => ({
+      value,
+      index,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const best = ordered[0];
+  const second = ordered[1];
+
+  /*
+   * Questão sem marca.
+   */
+  if (best.value < 0.075) {
+    return {
+      answer: null,
+      confidence: 0,
+      scores,
+    };
+  }
+
+  const difference = best.value - second.value;
+
+  /*
+   * Marca muito próxima entre duas alternativas.
+   */
+  if (difference < 0.035 && best.value < 0.28) {
+    return {
+      answer: null,
+      confidence: 0,
+      scores,
+    };
+  }
+
+  /*
+   * Se duas bolhas estão muito preenchidas,
+   * consideramos a questão ambígua.
+   */
+  if (second.value > 0.42 && difference < 0.12) {
+    return {
+      answer: null,
+      confidence: 0,
+      scores,
+    };
+  }
+
+  const confidence = Math.max(0, Math.min(1, difference / 0.28));
+
   return {
-    answers,
-    confidence: confidence / 10,
+    answer: ALTERNATIVES[best.index],
+    confidence,
+    scores,
   };
 }
 
@@ -302,11 +716,14 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   const [result, setResult] = useState<{
     answers: OMRAnswer[];
     confidence: number;
+    uncertain: number[];
   } | null>(null);
 
   const [error, setError] = useState("");
 
   const [loading, setLoading] = useState(false);
+
+  const [cameraReady, setCameraReady] = useState(false);
 
   // ====================================================
   // ABRIR CÂMERA
@@ -317,6 +734,9 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
     async function startCamera() {
       try {
+        setError("");
+        setCameraReady(false);
+
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error("Câmera não disponível.");
         }
@@ -334,6 +754,10 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
             height: {
               ideal: 1080,
             },
+
+            aspectRatio: {
+              ideal: 16 / 9,
+            },
           },
 
           audio: false,
@@ -347,17 +771,25 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
         setStream(media);
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = media;
+        const video = videoRef.current;
 
-          await videoRef.current.play();
+        if (!video) return;
+
+        video.srcObject = media;
+
+        await video.play();
+
+        if (active) {
+          setCameraReady(true);
         }
       } catch (err) {
         console.error(err);
 
-        setError(
-          "Não foi possível acessar a câmera. Você também pode enviar uma foto do gabarito.",
-        );
+        if (active) {
+          setError(
+            "Não foi possível acessar a câmera. Verifique a permissão do navegador ou use uma foto.",
+          );
+        }
       }
     }
 
@@ -384,12 +816,15 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     setStream(null);
 
     if (videoRef.current) {
+      videoRef.current.pause();
       videoRef.current.srcObject = null;
     }
+
+    setCameraReady(false);
   }
 
   // ====================================================
-  // PROCESSAR IMAGEM
+  // PROCESSA IMAGEM
   // ====================================================
 
   function processImage(source: CanvasImageSource) {
@@ -409,12 +844,15 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     }
 
     if (!width || !height) {
-      setError("A imagem não possui tamanho válido.");
-
-      return;
+      throw new Error("A imagem não possui tamanho válido.");
     }
 
-    const maxWidth = 1800;
+    /*
+     * Mantém uma resolução suficiente para
+     * detectar os marcadores sem exagerar
+     * no processamento.
+     */
+    const maxWidth = 2400;
 
     const scale = Math.min(1, maxWidth / width);
 
@@ -423,7 +861,6 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     const scaledHeight = Math.round(height * scale);
 
     canvas.width = scaledWidth;
-
     canvas.height = scaledHeight;
 
     const ctx = canvas.getContext("2d", {
@@ -431,54 +868,116 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     });
 
     if (!ctx) {
-      setError("Não foi possível processar a imagem.");
-
-      return;
+      throw new Error("Não foi possível preparar a imagem.");
     }
+
+    ctx.imageSmoothingEnabled = true;
 
     ctx.drawImage(source, 0, 0, scaledWidth, scaledHeight);
 
-    /*
-     * Se a imagem é uma página A4 inteira,
-     * extraímos a faixa inferior.
-     */
-    const gabaritoCanvas = cropGabaritoFromPage(
-      canvas,
-      scaledWidth,
-      scaledHeight,
-    );
+    // -----------------------------------------------
+    // PROCURA OS 4 MARCADORES
+    // -----------------------------------------------
 
-    const gabaritoCtx = gabaritoCanvas.getContext("2d", {
-      willReadFrequently: true,
-    });
+    const markers = detectMarkers(canvas);
 
-    if (!gabaritoCtx) {
-      setError("Não foi possível analisar o gabarito.");
-
-      return;
+    if (!markers) {
+      throw new Error(
+        "Não encontrei os 4 marcadores pretos do gabarito. Enquadre o gabarito inteiro, incluindo os quatro cantos.",
+      );
     }
 
-    /*
-     * Mostra somente a região analisada.
-     */
-    setPreview(gabaritoCanvas.toDataURL("image/jpeg", 0.92));
+    // -----------------------------------------------
+    // HOMOGRAFIA
+    // -----------------------------------------------
+
+    const sourcePoints = [
+      markers.topLeft,
+      markers.topRight,
+      markers.bottomRight,
+      markers.bottomLeft,
+    ];
+
+    const destinationPoints = [
+      {
+        x: OMR_TEMPLATE.marker.offset,
+        y: OMR_TEMPLATE.marker.offset,
+      },
+
+      {
+        x: OMR_TEMPLATE.width - OMR_TEMPLATE.marker.offset,
+        y: OMR_TEMPLATE.marker.offset,
+      },
+
+      {
+        x: OMR_TEMPLATE.width - OMR_TEMPLATE.marker.offset,
+        y: OMR_TEMPLATE.height - OMR_TEMPLATE.marker.offset,
+      },
+
+      {
+        x: OMR_TEMPLATE.marker.offset,
+        y: OMR_TEMPLATE.height - OMR_TEMPLATE.marker.offset,
+      },
+    ];
 
     /*
-     * Leitura OMR.
+     * A homografia abaixo transforma coordenadas
+     * do gabarito original em coordenadas da foto.
      */
-    const read = readAnswers(gabaritoCtx);
+    const homography = calculateHomography(destinationPoints, sourcePoints);
 
-    setResult(read);
+    // -----------------------------------------------
+    // LEITURA
+    // -----------------------------------------------
+
+    const answers: OMRAnswer[] = [];
+    const uncertain: number[] = [];
+
+    let confidenceTotal = 0;
+
+    for (let question = 0; question < 10; question++) {
+      const read = readQuestion(ctx, homography, question);
+
+      /*
+       * O sistema precisa devolver um array
+       * compatível com o restante do aplicativo.
+       *
+       * Para questão sem marca ou duvidosa,
+       * usamos A internamente, mas marcamos a
+       * questão como INCERTA para revisão.
+       */
+      if (!read.answer) {
+        answers.push("A");
+
+        uncertain.push(question + 1);
+      } else {
+        answers.push(read.answer);
+      }
+
+      confidenceTotal += read.confidence;
+    }
+
+    // -----------------------------------------------
+    // PREVIEW DA FOTO ORIGINAL
+    // -----------------------------------------------
+
+    setPreview(canvas.toDataURL("image/jpeg", 0.9));
+
+    setResult({
+      answers,
+      confidence: confidenceTotal / 10,
+      uncertain,
+    });
   }
 
   // ====================================================
-  // FOTOGRAFAR
+  // CAPTURAR
   // ====================================================
 
   function capture() {
     const video = videoRef.current;
 
-    if (!video || video.readyState < 2) {
+    if (!video || video.readyState < 2 || !video.videoWidth) {
       setError("A câmera ainda não está pronta.");
 
       return;
@@ -489,12 +988,15 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
     try {
       processImage(video);
-
       stopCamera();
     } catch (err) {
       console.error(err);
 
-      setError("Não foi possível fazer a leitura.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível fazer a leitura.",
+      );
     } finally {
       setLoading(false);
     }
@@ -533,10 +1035,13 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     } catch (err) {
       console.error(err);
 
-      setError("Não foi possível processar a imagem.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível processar a imagem.",
+      );
     } finally {
       setLoading(false);
-
       event.target.value = "";
     }
   }
@@ -549,7 +1054,6 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     if (!result) return;
 
     onDetected(result.answers);
-
     onClose();
   }
 
@@ -561,6 +1065,23 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
     setResult(null);
     setPreview("");
     setError("");
+
+    /*
+     * A câmera é reaberta automaticamente porque
+     * o componente continua montado.
+     */
+    if (!stream) {
+      window.location.reload();
+    }
+  }
+
+  // ====================================================
+  // FECHAR
+  // ====================================================
+
+  function close() {
+    stopCamera();
+    onClose();
   }
 
   // ====================================================
@@ -568,160 +1089,283 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   // ====================================================
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 sm:p-6">
-      <div className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
-        {/* CABEÇALHO */}
+    <div className="fixed inset-0 z-[9999] bg-black">
+      <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-black">
+        {/* ==================================================
+            CÂMERA
+        ================================================== */}
 
-        <div className="flex items-center justify-between border-b px-5 py-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-blue-600">
-              Leitura OMR
-            </p>
+        {!preview ? (
+          <>
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              autoPlay
+              className="absolute inset-0 h-full w-full object-cover"
+            />
 
-            <h2 className="text-xl font-black">Escanear gabarito</h2>
-          </div>
+            {/* Escurecimento leve */}
+            <div className="pointer-events-none absolute inset-0 bg-black/10" />
 
-          <button
-            type="button"
-            onClick={() => {
-              stopCamera();
-              onClose();
-            }}
-            className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100"
-          >
-            <X size={20} />
-          </button>
-        </div>
+            {/* ==================================================
+                TOPO
+            ================================================== */}
 
-        {/* CONTEÚDO */}
+            <div className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))]">
+              <div className="rounded-2xl bg-black/60 px-4 py-2 text-white backdrop-blur-md">
+                <div className="flex items-center gap-2">
+                  <ScanLine size={18} />
 
-        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[1.25fr_.75fr]">
-          {/* CÂMERA */}
+                  <span className="font-black">Escanear gabarito</span>
+                </div>
 
-          <div className="space-y-4">
-            <div className="relative overflow-hidden rounded-3xl bg-black">
-              {preview ? (
-                <img
-                  src={preview}
-                  alt="Região do gabarito analisada"
-                  className="block max-h-[58vh] w-full object-contain"
-                />
-              ) : (
-                <video
-                  ref={videoRef}
-                  playsInline
-                  muted
-                  className="block aspect-video w-full object-contain"
-                />
-              )}
-            </div>
-
-            <canvas ref={canvasRef} className="hidden" />
-
-            {error && (
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-                {error}
+                <p className="mt-0.5 text-xs text-white/70">
+                  Enquadre os 4 marcadores pretos
+                </p>
               </div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              {!preview && (
-                <button
-                  type="button"
-                  onClick={capture}
-                  disabled={loading || !stream}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-40"
-                >
-                  <Camera size={18} />
-
-                  {loading ? "Lendo..." : "Fotografar e ler"}
-                </button>
-              )}
 
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-2xl border bg-white px-5 py-3 font-bold"
+                onClick={close}
+                className="grid h-11 w-11 place-items-center rounded-full bg-black/60 text-white backdrop-blur-md"
+                aria-label="Fechar câmera"
               >
-                <ImageIcon size={18} />
-                Usar foto
+                <X size={22} />
               </button>
-
-              {preview && (
-                <button
-                  type="button"
-                  onClick={reset}
-                  className="inline-flex items-center gap-2 rounded-2xl border bg-white px-5 py-3 font-bold"
-                >
-                  <RotateCcw size={18} />
-                  Nova leitura
-                </button>
-              )}
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handleFile}
-              />
             </div>
 
-            <div className="rounded-2xl border bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-              <b className="text-slate-900">Para uma boa leitura:</b> fotografe
-              a página inteira, principalmente a parte inferior onde está o
-              gabarito. Mantenha a folha reta, sem cortar os quatro marcadores
-              pretos e com boa iluminação.
+            {/* ==================================================
+                MOLDURA
+            ================================================== */}
+
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-5">
+              <div className="relative w-full max-w-[1100px]">
+                <div className="aspect-[1123/380] w-full rounded-xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+
+                {/* Cantos da moldura */}
+
+                <div className="absolute left-0 top-0 h-8 w-8 border-l-4 border-t-4 border-white" />
+
+                <div className="absolute right-0 top-0 h-8 w-8 border-r-4 border-t-4 border-white" />
+
+                <div className="absolute bottom-0 left-0 h-8 w-8 border-b-4 border-l-4 border-white" />
+
+                <div className="absolute bottom-0 right-0 h-8 w-8 border-b-4 border-r-4 border-white" />
+              </div>
+            </div>
+
+            {/* ==================================================
+                INSTRUÇÃO INFERIOR
+            ================================================== */}
+
+            <div className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <div className="mx-auto max-w-xl rounded-3xl bg-black/65 p-4 text-center text-white backdrop-blur-md">
+                <p className="text-sm font-bold">
+                  Coloque o gabarito inteiro dentro da moldura
+                </p>
+
+                <p className="mt-1 text-xs text-white/70">
+                  Os 4 quadrados pretos precisam aparecer. Evite reflexos e
+                  sombras.
+                </p>
+
+                <div className="mt-4 flex items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={capture}
+                    disabled={loading || !stream || !cameraReady}
+                    className="flex h-16 min-w-[190px] items-center justify-center gap-3 rounded-full bg-blue-600 px-7 text-base font-black text-white shadow-xl disabled:opacity-40"
+                  >
+                    <Camera size={23} />
+
+                    {loading ? "Lendo..." : "Fotografar"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="grid h-14 w-14 place-items-center rounded-full bg-white/15 text-white backdrop-blur-md"
+                    aria-label="Usar foto"
+                  >
+                    <ImageIcon size={21} />
+                  </button>
+                </div>
+
+                {cameraReady && (
+                  <div className="mt-3 flex items-center justify-center gap-2 text-xs text-emerald-300">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                    Câmera pronta
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          /* ==================================================
+             RESULTADO
+          ================================================== */
+
+          <div className="flex h-full flex-col bg-slate-100">
+            <div className="flex items-center justify-between bg-white px-4 py-4 shadow-sm">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">
+                  Resultado
+                </p>
+
+                <h2 className="text-lg font-black text-slate-900">
+                  Leitura do gabarito
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={close}
+                className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <div className="mx-auto max-w-5xl space-y-4">
+                <div className="overflow-hidden rounded-3xl bg-black shadow-lg">
+                  <img
+                    src={preview}
+                    alt="Gabarito fotografado"
+                    className="block max-h-[42vh] w-full object-contain"
+                  />
+                </div>
+
+                {error && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                    {error}
+                  </div>
+                )}
+
+                {result && (
+                  <>
+                    <div className="rounded-3xl bg-white p-5 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-black text-slate-900">
+                            Respostas identificadas
+                          </h3>
+
+                          <p className="mt-1 text-xs text-slate-500">
+                            Confira antes de confirmar.
+                          </p>
+                        </div>
+
+                        <div className="rounded-full bg-blue-50 px-3 py-1 text-sm font-black text-blue-700">
+                          {Math.round(result.confidence * 100)}%
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                        {result.answers.map((answer, index) => {
+                          const uncertain = result.uncertain.includes(
+                            index + 1,
+                          );
+
+                          return (
+                            <div
+                              key={index}
+                              className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
+                                uncertain
+                                  ? "border-amber-300 bg-amber-50"
+                                  : "bg-white"
+                              }`}
+                            >
+                              <span className="text-sm font-bold">
+                                {String(index + 1).padStart(2, "0")}
+                              </span>
+
+                              <span
+                                className={`grid h-8 w-8 place-items-center rounded-full font-black ${
+                                  uncertain
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-blue-50 text-blue-700"
+                                }`}
+                              >
+                                {answer}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {result.uncertain.length > 0 && (
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                          <b>Atenção:</b> as questões{" "}
+                          {result.uncertain.join(", ")} ficaram duvidosas ou sem
+                          marca clara. Revise antes de confirmar.
+                        </div>
+                      )}
+
+                      {result.uncertain.length === 0 && (
+                        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                          Todas as questões foram identificadas com diferença
+                          suficiente entre as alternativas.
+                        </div>
+                      )}
+
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={reset}
+                          className="flex items-center justify-center gap-2 rounded-2xl border bg-white py-3 font-bold text-slate-700"
+                        >
+                          <RotateCcw size={18} />
+                          Fotografar novamente
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={confirmResult}
+                          className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-black text-white"
+                        >
+                          <CheckCircle2 size={18} />
+                          Confirmar correção
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border bg-white p-4 text-sm text-slate-600">
+                      <div className="flex gap-3">
+                        <ZoomIn
+                          size={18}
+                          className="mt-0.5 shrink-0 text-blue-600"
+                        />
+
+                        <p>
+                          Para melhorar a precisão, mantenha os quatro
+                          marcadores pretos visíveis e evite inclinar
+                          excessivamente a folha.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
+        )}
 
-          {/* RESULTADO */}
+        {/* INPUT DE FOTO */}
 
-          <aside className="rounded-3xl border bg-slate-50 p-5">
-            <h3 className="font-black">Respostas identificadas</h3>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handleFile}
+        />
 
-            {!result ? (
-              <p className="mt-3 text-sm leading-6 text-slate-500">
-                Fotografe ou envie uma imagem da prova para analisar as 10
-                questões.
-              </p>
-            ) : (
-              <>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  {result.answers.map((answer, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between rounded-xl border bg-white px-3 py-2"
-                    >
-                      <span className="text-sm font-bold">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
+        {/* CANVAS DE PROCESSAMENTO */}
 
-                      <span className="grid h-8 w-8 place-items-center rounded-full bg-blue-50 font-black text-blue-700">
-                        {answer}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-4 rounded-2xl border bg-white p-4 text-sm">
-                  Confiança aproximada:{" "}
-                  <b>{Math.round(result.confidence * 100)}%</b>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={confirmResult}
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-black text-white"
-                >
-                  <CheckCircle2 size={18} />
-                  Confirmar correção
-                </button>
-              </>
-            )}
-          </aside>
-        </div>
+        <canvas ref={canvasRef} className="hidden" />
       </div>
     </div>
   );

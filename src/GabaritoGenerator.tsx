@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Download, FileImage, FileText, FileType } from "lucide-react";
 import { jsPDF } from "jspdf";
-import { Document, ImageRun, Packer, Paragraph } from "docx";
+import { AlignmentType, Document, ImageRun, Packer, Paragraph } from "docx";
 
 export type GabaritoAnswer = "A" | "B" | "C" | "D";
 
@@ -64,6 +64,7 @@ export function getBubblePosition(question: number, answer: GabaritoAnswer) {
 
   return {
     x: group.bubbleStartX + answerIndex * OMR_TEMPLATE.bubble.step,
+
     y: OMR_TEMPLATE.rows.startY + row * OMR_TEMPLATE.rows.stepY,
   };
 }
@@ -416,11 +417,7 @@ export async function downloadGabaritoWord() {
 
         children: [
           /**
-           * Espaço flexível antes do gabarito.
-           *
-           * Como o gabarito precisa ficar no final
-           * da página, usamos um parágrafo grande
-           * antes da imagem.
+           * Espaço antes do gabarito.
            */
           new Paragraph({
             spacing: {
@@ -432,7 +429,7 @@ export async function downloadGabaritoWord() {
            * Gabarito no final da página.
            */
           new Paragraph({
-            alignment: 1,
+            alignment: AlignmentType.CENTER,
 
             children: [
               new ImageRun({
