@@ -12,6 +12,7 @@ import {
   Camera,
   Check,
   ChevronRight,
+  ChevronDown,
   FileSpreadsheet,
   FileText,
   GraduationCap,
@@ -107,6 +108,19 @@ export type Result = {
   createdAt?: unknown;
 };
 
+type GradeEntry = {
+  studentId: string;
+  student: string;
+  disciplina: string;
+  turmaId: string;
+  turmaNome: string;
+  turmaAno: number;
+  bimestre: string;
+  atv1?: number;
+  atv2?: number;
+  atv3?: number;
+};
+
 type Page =
   | "home"
   | "turmas"
@@ -115,7 +129,7 @@ type Page =
   | "avaliacoes"
   | "setup"
   | "scan"
-  | "results"
+  | "grades"
   | "settings"
   | "review";
 
@@ -144,11 +158,13 @@ export default function App() {
   // FORMULÁRIO DA AVALIAÇÃO
   // ====================================================
 
-  const [disciplina, setDisciplina] = useState("Matemática");
+  const [disciplina, setDisciplina] = useState(() => localStorage.getItem("corretor-disciplina") || "Matemática");
   const [turmaId, setTurmaId] = useState("");
-  const [nomeAtividade, setNomeAtividade] = useState<"Atividade 1" | "Atividade 2" | "Atividade 3">("Atividade 1");
-  const [notaMaxima, setNotaMaxima] = useState(10);
-  const [bimestre, setBimestre] = useState("1º Bimestre");
+  const [nomeAtividade, setNomeAtividade] = useState<
+    "Atividade 1" | "Atividade 2" | "Atividade 3"
+  >((localStorage.getItem("corretor-atividade") as "Atividade 1" | "Atividade 2" | "Atividade 3") || "Atividade 3");
+  const [notaMaxima, setNotaMaxima] = useState(() => Number(localStorage.getItem("corretor-nota") || 5));
+  const [bimestre, setBimestre] = useState(() => localStorage.getItem("corretor-bimestre") || "4º Bimestre");
   const [key, setKey] = useState<Answer[]>(Array(10).fill("A") as Answer[]);
 
   const [settings, setSettings] = useState({
@@ -156,6 +172,9 @@ export default function App() {
     atividade2: { nota: 10, questoes: 10 },
     atividade3: { nota: 10, questoes: 10 },
   });
+
+  const [grades, setGrades] = useState<Record<string, GradeEntry>>({});
+
 
   // ====================================================
   // ALUNOS
@@ -220,6 +239,7 @@ export default function App() {
           loadStudents(),
           loadAvaliacoes(),
           loadResults(),
+          loadGrades(),
           loadSettings(),
         ]);
       } catch (err) {
@@ -375,6 +395,19 @@ export default function App() {
     }
   }
 
+  async function loadGrades() {
+    try {
+      const snapshot = await getDocs(collection(db, "notas"));
+      const next: Record<string, GradeEntry> = {};
+      snapshot.docs.forEach((item) => {
+        next[item.id] = item.data() as GradeEntry;
+      });
+      setGrades(next);
+    } catch (err) {
+      console.error("Erro ao carregar notas:", err);
+    }
+  }
+
   async function loadSettings() {
     try {
       const snapshot = await getDocs(collection(db, "configuracoes"));
@@ -382,9 +415,24 @@ export default function App() {
       if (found) {
         const raw = found.data();
         setSettings((current) => ({
-          atividade1: { nota: Number(raw.atividade1?.nota ?? current.atividade1.nota), questoes: Number(raw.atividade1?.questoes ?? current.atividade1.questoes) },
-          atividade2: { nota: Number(raw.atividade2?.nota ?? current.atividade2.nota), questoes: Number(raw.atividade2?.questoes ?? current.atividade2.questoes) },
-          atividade3: { nota: Number(raw.atividade3?.nota ?? current.atividade3.nota), questoes: Number(raw.atividade3?.questoes ?? current.atividade3.questoes) },
+          atividade1: {
+            nota: Number(raw.atividade1?.nota ?? current.atividade1.nota),
+            questoes: Number(
+              raw.atividade1?.questoes ?? current.atividade1.questoes,
+            ),
+          },
+          atividade2: {
+            nota: Number(raw.atividade2?.nota ?? current.atividade2.nota),
+            questoes: Number(
+              raw.atividade2?.questoes ?? current.atividade2.questoes,
+            ),
+          },
+          atividade3: {
+            nota: Number(raw.atividade3?.nota ?? current.atividade3.nota),
+            questoes: Number(
+              raw.atividade3?.questoes ?? current.atividade3.questoes,
+            ),
+          },
         }));
       }
     } catch (err) {
@@ -392,16 +440,6 @@ export default function App() {
     }
   }
 
-  async function saveSettings(next: typeof settings) {
-    try {
-      await setDoc(doc(db, "configuracoes", "avaliacoes"), next, { merge: true });
-      setSettings(next);
-      setError("");
-    } catch (err) {
-      console.error(err);
-      setError("Não foi possível salvar as configurações.");
-    }
-  }
 
   // ====================================================
   // CADASTRAR TURMA
@@ -598,7 +636,14 @@ export default function App() {
 
   async function startEvaluation() {
     const turma = turmas.find((item) => item.id === turmaId);
-    const preset = settings[nomeAtividade === "Atividade 1" ? "atividade1" : nomeAtividade === "Atividade 2" ? "atividade2" : "atividade3"];
+    const preset =
+      settings[
+        nomeAtividade === "Atividade 1"
+          ? "atividade1"
+          : nomeAtividade === "Atividade 2"
+            ? "atividade2"
+            : "atividade3"
+      ];
     const questionCount = preset?.questoes || key.length;
     const configuredScore = preset?.nota || notaMaxima || 10;
 
@@ -691,7 +736,12 @@ export default function App() {
       0,
     );
 
-    const score = Number(((hits / Math.max(total, 1)) * (currentAvaliacao.notaMaxima ?? 10)).toFixed(2));
+    const score = Number(
+      (
+        (hits / Math.max(total, 1)) *
+        (currentAvaliacao.notaMaxima ?? 10)
+      ).toFixed(2),
+    );
 
     const result: Result = {
       studentId: selectedStudent.id,
@@ -729,12 +779,44 @@ export default function App() {
         ...current,
       ]);
 
-      setPage("results");
+      setPage("avaliacoes");
     } catch (err) {
       console.error(err);
       setError("Não foi possível salvar a correção.");
     } finally {
       setSavingResult(false);
+    }
+  }
+
+  useEffect(() => {
+    localStorage.setItem("corretor-atividade", nomeAtividade);
+  }, [nomeAtividade]);
+
+  useEffect(() => {
+    localStorage.setItem("corretor-nota", String(notaMaxima));
+  }, [notaMaxima]);
+
+  useEffect(() => {
+    localStorage.setItem("corretor-bimestre", bimestre);
+  }, [bimestre]);
+
+  useEffect(() => {
+    localStorage.setItem("corretor-disciplina", disciplina);
+  }, [disciplina]);
+
+  async function saveGrade(student: Student, values: { atv1?: number; atv2?: number; atv3?: number }, disciplinaValue: string, bimestreValue: string) {
+    const keyId = `${student.id}_${disciplinaValue.trim().toLowerCase()}_${bimestreValue}`.replace(/\s+/g, "_");
+    const entry: GradeEntry = {
+      studentId: student.id, student: student.nome, disciplina: disciplinaValue.trim() || "Não informada",
+      turmaId: student.turmaId, turmaNome: student.turmaNome, turmaAno: student.turmaAno || new Date().getFullYear(),
+      bimestre: bimestreValue, ...values,
+    };
+    try {
+      await setDoc(doc(db, "notas", keyId), entry, { merge: true });
+      setGrades((current) => ({ ...current, [keyId]: { ...current[keyId], ...entry } }));
+    } catch (err) {
+      console.error(err);
+      setError("Não foi possível salvar a nota.");
     }
   }
 
@@ -776,7 +858,7 @@ export default function App() {
 
   function handleExport() {
     try {
-      exportResults(results, avaliacoes, students, "resultados.xlsx");
+      exportResults(results, avaliacoes, students, "resultados.xlsx", Object.values(grades));
     } catch (err) {
       console.error(err);
 
@@ -837,7 +919,12 @@ export default function App() {
               label="Gabarito"
               onClick={() => setPage("gabarito")}
             />
-            <NavButton active={page === "avaliacoes"} icon={<BookOpen size={17} />} label="Avaliações" onClick={() => setPage("avaliacoes")} />
+            <NavButton
+              active={page === "avaliacoes"}
+              icon={<BookOpen size={17} />}
+              label="Avaliações"
+              onClick={() => setPage("avaliacoes")}
+            />
 
             <NavButton
               active={page === "setup" || page === "scan"}
@@ -847,18 +934,12 @@ export default function App() {
             />
 
             <NavButton
-              active={page === "results"}
+              active={page === "grades"}
               icon={<FileSpreadsheet size={17} />}
-              label="Resultados"
-              onClick={() => setPage("results")}
+              label="Cadastrar notas"
+              onClick={() => setPage("grades")}
             />
 
-            <NavButton
-              active={page === "settings"}
-              icon={<BookOpen size={17} />}
-              label="Configurações"
-              onClick={() => setPage("settings")}
-            />
           </nav>
 
           <span
@@ -876,15 +957,45 @@ export default function App() {
           <button
             type="button"
             onClick={() => setMobileMenuOpen((value) => !value)}
-            className="flex w-full items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-sm font-black"
+            className="flex w-full items-center justify-between rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white shadow-sm"
           >
             <span>Menu</span>
-            <span>{mobileMenuOpen ? "Fechar" : "Abrir"}</span>
+            <ChevronDown className={`transition-transform ${mobileMenuOpen ? "rotate-180" : ""}`} size={20} />
           </button>
           {mobileMenuOpen && (
             <div className="mt-2 grid grid-cols-2 gap-2 pb-1">
-              {[["Início", () => setPage("home"), <HomeIcon size={18}/>], ["Turmas", () => setPage("turmas"), <GraduationCap size={18}/>], ["Alunos", () => setPage("students"), <Users size={18}/>], ["Gabarito", () => setPage("gabarito"), <FileText size={18}/>], ["Avaliações", () => setPage("avaliacoes"), <BookOpen size={18}/>], ["Avaliação", () => setPage("setup"), <BookOpen size={18}/>], ["Resultados", () => setPage("results"), <FileSpreadsheet size={18}/>], ["Configurações", () => setPage("settings"), <BookOpen size={18}/>]].map(([label, action, icon]) => (
-                <button key={String(label)} onClick={() => { (action as () => void)(); setMobileMenuOpen(false); }} className="flex items-center gap-3 rounded-2xl border bg-white p-3 text-left text-sm font-bold">{icon as ReactNode}<span>{String(label)}</span></button>
+              {[
+                ["Início", () => setPage("home"), <HomeIcon size={18} />],
+                [
+                  "Turmas",
+                  () => setPage("turmas"),
+                  <GraduationCap size={18} />,
+                ],
+                ["Alunos", () => setPage("students"), <Users size={18} />],
+                ["Gabarito", () => setPage("gabarito"), <FileText size={18} />],
+                [
+                  "Avaliações",
+                  () => setPage("avaliacoes"),
+                  <BookOpen size={18} />,
+                ],
+                ["Avaliação", () => setPage("setup"), <BookOpen size={18} />],
+                [
+                  "Cadastrar notas",
+                  () => setPage("grades"),
+                  <FileSpreadsheet size={18} />,
+                ],
+              ].map(([label, action, icon]) => (
+                <button
+                  key={String(label)}
+                  onClick={() => {
+                    (action as () => void)();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 rounded-2xl border bg-white p-3 text-left text-sm font-bold"
+                >
+                  {icon as ReactNode}
+                  <span>{String(label)}</span>
+                </button>
               ))}
             </div>
           )}
@@ -914,7 +1025,7 @@ export default function App() {
             onStudents={() => setPage("students")}
             onGabarito={() => setPage("gabarito")}
             onNew={() => setPage("setup")}
-            onResults={() => setPage("results")}
+            onResults={() => setPage("grades")}
           />
         )}
 
@@ -966,8 +1077,15 @@ export default function App() {
         {page === "avaliacoes" && (
           <AvaliacoesPage
             avaliacoes={avaliacoes}
+            students={students}
+            results={results}
+            onExport={handleExport}
             onUpdate={(updated) => {
-              setAvaliacoes((current) => current.map((item) => item.id === updated.id ? updated : item));
+              setAvaliacoes((current) =>
+                current.map((item) =>
+                  item.id === updated.id ? updated : item,
+                ),
+              );
             }}
           />
         )}
@@ -998,7 +1116,11 @@ export default function App() {
             student={selectedStudent}
             answers={reviewAnswers}
             confidence={reviewConfidence}
-            onChange={(index, value) => setReviewAnswers((current) => current.map((item, i) => i === index ? value : item))}
+            onChange={(index, value) =>
+              setReviewAnswers((current) =>
+                current.map((item, i) => (i === index ? value : item)),
+              )
+            }
             onBack={() => setPage("scan")}
             onConfirm={() => void saveResult(reviewAnswers)}
             saving={savingResult}
@@ -1018,15 +1140,14 @@ export default function App() {
           />
         )}
 
-        {page === "settings" && (
-          <SettingsPage settings={settings} onSave={saveSettings} />
-        )}
-
-        {page === "results" && (
-          <Results
+        {page === "grades" && (
+          <GradesPage
+            students={students}
+            turmas={turmas}
+            grades={grades}
             results={results}
             avaliacoes={avaliacoes}
-            turmas={turmas}
+            onSave={saveGrade}
             onExport={handleExport}
           />
         )}
@@ -1625,56 +1746,301 @@ function Students({
 // ======================================================
 // AVALIAÇÕES CADASTRADAS
 // ======================================================
-function AvaliacoesPage({ avaliacoes, onUpdate }: { avaliacoes: Avaliacao[]; onUpdate: (avaliacao: Avaliacao) => void }) {
+function AvaliacoesPage({
+  avaliacoes,
+  students,
+  results,
+  onExport,
+  onUpdate,
+}: {
+  avaliacoes: Avaliacao[];
+  students: Student[];
+  results: Result[];
+  onExport: () => void;
+  onUpdate: (avaliacao: Avaliacao) => void;
+}) {
   const [editing, setEditing] = useState<Avaliacao | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   async function save() {
     if (!editing) return;
     try {
-      setSaving(true); setMessage("");
-      await setDoc(doc(db, "avaliacoes", editing.id), { gabarito: editing.gabarito, quantidadeQuestoes: editing.quantidadeQuestoes }, { merge: true });
-      onUpdate(editing); setMessage("Gabarito atualizado com sucesso.");
-    } catch (err) { console.error(err); setMessage("Não foi possível salvar o gabarito."); }
-    finally { setSaving(false); }
+      setSaving(true);
+      setMessage("");
+      await setDoc(
+        doc(db, "avaliacoes", editing.id),
+        {
+          gabarito: editing.gabarito,
+          quantidadeQuestoes: editing.quantidadeQuestoes,
+        },
+        { merge: true },
+      );
+      onUpdate(editing);
+      setMessage("Gabarito atualizado com sucesso.");
+    } catch (err) {
+      console.error(err);
+      setMessage("Não foi possível salvar o gabarito.");
+    } finally {
+      setSaving(false);
+    }
   }
-  return <section className="mx-auto max-w-6xl"><div className="mb-6"><p className="text-sm font-bold text-blue-600">AVALIAÇÕES</p><h2 className="mt-1 text-3xl font-black">Avaliações cadastradas</h2><p className="mt-2 text-slate-500">Acesse qualquer avaliação e cadastre ou altere o gabarito quando precisar.</p></div>
-    {message && <div className="mb-4 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900">{message}</div>}
-    <div className="grid gap-4 md:grid-cols-2">{avaliacoes.length === 0 ? <div className="rounded-3xl border bg-white p-8 text-center text-slate-500 md:col-span-2">Nenhuma avaliação cadastrada.</div> : avaliacoes.map(item => <div key={item.id} className="rounded-3xl border bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{item.nomeAtividade || item.titulo} - {item.disciplina}</p><p className="mt-1 text-sm text-slate-500">{item.bimestre || "Bimestre não informado"} • {item.turmaNome}</p></div><button onClick={() => setEditing({...item, gabarito: [...item.gabarito]})} className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700">Editar gabarito</button></div><div className="mt-4 flex flex-wrap gap-2">{item.gabarito.map((answer,index)=><span key={index} className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold">{index+1}:{answer}</span>)}</div></div>)}</div>
-    {editing && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl"><div className="flex items-center justify-between"><div><p className="text-sm font-bold text-blue-600">EDITAR GABARITO</p><h3 className="text-xl font-black">{editing.nomeAtividade || editing.titulo} - {editing.disciplina}</h3></div><button onClick={() => setEditing(null)} className="rounded-xl p-2 hover:bg-slate-100"><X size={20}/></button></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">{editing.gabarito.map((answer,index)=><label key={index} className="rounded-2xl border bg-slate-50 p-3"><span className="text-sm font-black">Questão {index+1}</span><select value={answer} onChange={e=>setEditing(current=>current ? {...current,gabarito:current.gabarito.map((a,i)=>i===index?e.target.value as Answer:a)} : current)} className="mt-2 w-full rounded-xl border bg-white px-2 py-2 font-bold">{alternatives.map(a=><option key={a}>{a}</option>)}</select></label>)}</div><button onClick={()=>void save()} disabled={saving} className="mt-5 w-full rounded-2xl bg-emerald-600 py-4 font-black text-white disabled:opacity-50">{saving ? "Salvando..." : "Salvar gabarito"}</button></div></div>}
-  </section>;
+  return (
+    <section className="mx-auto max-w-6xl">
+      <div className="mb-6">
+        <p className="text-sm font-bold text-blue-600">AVALIAÇÕES</p>
+        <h2 className="mt-1 text-3xl font-black">Avaliações cadastradas</h2>
+        <p className="mt-2 text-slate-500">
+          Clique em uma avaliação para visualizar as respostas de cada aluno.
+        </p>
+      </div>
+      <button onClick={onExport} className="mb-5 inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white">
+        <FileSpreadsheet size={18} /> Exportar planilha
+      </button>
+      {message && (
+        <div className="mb-4 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900">
+          {message}
+        </div>
+      )}
+      <div className="grid gap-4 md:grid-cols-2">
+        {avaliacoes.length === 0 ? (
+          <div className="rounded-3xl border bg-white p-8 text-center text-slate-500 md:col-span-2">
+            Nenhuma avaliação cadastrada.
+          </div>
+        ) : (
+          avaliacoes.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-3xl border bg-white p-5 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-black">
+                    {item.nomeAtividade || item.titulo} - {item.disciplina}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {item.bimestre || "Bimestre não informado"} •{" "}
+                    {item.turmaNome}
+                  </p>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    onClick={() => setExpandedId((current) => current === item.id ? null : item.id)}
+                    className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-bold text-white"
+                  >
+                    {expandedId === item.id ? "Ocultar resultados" : "Ver resultados"}
+                  </button>
+                  <button
+                    onClick={() => setEditing({ ...item, gabarito: [...item.gabarito] })}
+                    className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700"
+                  >Editar gabarito</button>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {item.gabarito.map((answer, index) => (
+                  <span
+                    key={index}
+                    className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold"
+                  >
+                    {index + 1}:{answer}
+                  </span>
+                ))}
+              </div>
+              {expandedId === item.id && (
+                <div className="mt-5 overflow-hidden rounded-2xl border">
+                  <div className="bg-slate-100 px-4 py-3 text-sm font-black">Respostas dos alunos</div>
+                  {students.filter((student) => student.turmaId === item.turmaId).map((student) => {
+                    const result = results.find((r) => r.avaliacaoId === item.id && r.studentId === student.id);
+                    return (
+                      <div key={student.id} className="border-t px-4 py-4">
+                        <div className="flex flex-col justify-between gap-2 md:flex-row md:items-center">
+                          <div><b>{student.nome}</b><div className="text-xs text-slate-500">{result ? `${result.hits}/${result.total} acertos • Nota ${Number(result.score).toFixed(1)}` : "Ainda não corrigida"}</div></div>
+                          <div className="flex flex-wrap gap-1">
+                            {(result?.answers || []).map((answer, index) => <span key={index} className={`rounded-md px-2 py-1 text-xs font-black ${answer === item.gabarito[index] ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{index + 1}:{answer}</span>)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-blue-600">
+                  EDITAR GABARITO
+                </p>
+                <h3 className="text-xl font-black">
+                  {editing.nomeAtividade || editing.titulo} -{" "}
+                  {editing.disciplina}
+                </h3>
+              </div>
+              <button
+                onClick={() => setEditing(null)}
+                className="rounded-xl p-2 hover:bg-slate-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
+              {editing.gabarito.map((answer, index) => (
+                <label
+                  key={index}
+                  className="rounded-2xl border bg-slate-50 p-3"
+                >
+                  <span className="text-sm font-black">
+                    Questão {index + 1}
+                  </span>
+                  <select
+                    value={answer}
+                    onChange={(e) =>
+                      setEditing((current) =>
+                        current
+                          ? {
+                              ...current,
+                              gabarito: current.gabarito.map((a, i) =>
+                                i === index ? (e.target.value as Answer) : a,
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                    className="mt-2 w-full rounded-xl border bg-white px-2 py-2 font-bold"
+                  >
+                    {alternatives.map((a) => (
+                      <option key={a}>{a}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+            <button
+              onClick={() => void save()}
+              disabled={saving}
+              className="mt-5 w-full rounded-2xl bg-emerald-600 py-4 font-black text-white disabled:opacity-50"
+            >
+              {saving ? "Salvando..." : "Salvar gabarito"}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
 
 // ======================================================
 // REVISÃO APÓS ESCANEAMENTO
 // ======================================================
-function ReviewPage({ avaliacao, student, answers, confidence, onChange, onBack, onConfirm, saving }: {
-  avaliacao: Avaliacao; student: Student; answers: Answer[]; confidence: number;
-  onChange: (index: number, value: Answer) => void; onBack: () => void; onConfirm: () => void; saving: boolean;
+function ReviewPage({
+  avaliacao,
+  student,
+  answers,
+  confidence,
+  onChange,
+  onBack,
+  onConfirm,
+  saving,
+}: {
+  avaliacao: Avaliacao;
+  student: Student;
+  answers: Answer[];
+  confidence: number;
+  onChange: (index: number, value: Answer) => void;
+  onBack: () => void;
+  onConfirm: () => void;
+  saving: boolean;
 }) {
   const total = avaliacao.quantidadeQuestoes || avaliacao.gabarito.length;
-  const hits = answers.reduce((sum, answer, i) => sum + (answer === avaliacao.gabarito[i] ? 1 : 0), 0);
-  const score = Number(((hits / Math.max(total, 1)) * (avaliacao.notaMaxima ?? 10)).toFixed(2));
+  const hits = answers.reduce(
+    (sum, answer, i) => sum + (answer === avaliacao.gabarito[i] ? 1 : 0),
+    0,
+  );
+  const score = Number(
+    ((hits / Math.max(total, 1)) * (avaliacao.notaMaxima ?? 10)).toFixed(2),
+  );
   const perfect = confidence >= 0.999 && answers.length >= total;
-  return <section className="mx-auto max-w-5xl">
-    <div className="mb-6 flex items-end justify-between gap-4"><div><p className="text-sm font-bold text-blue-600">RESULTADO DA LEITURA</p><h2 className="mt-1 text-3xl font-black">Confira antes de salvar</h2><p className="mt-2 text-slate-500">{student.nome} • {avaliacao.nomeAtividade || avaliacao.titulo} - {avaliacao.disciplina}</p></div><button onClick={onBack} className="rounded-xl border bg-white px-4 py-2 text-sm font-bold">Voltar</button></div>
-    <div className="grid gap-5 md:grid-cols-[220px_1fr]"><div className="rounded-3xl border bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Nota</p><div className="mt-2 text-5xl font-black text-blue-600">{score.toFixed(2)}</div><p className="mt-2 font-bold">{hits}/{total} acertos</p><p className="mt-4 text-sm text-slate-500">Leitura: {Math.round(confidence*100)}%</p></div>
-      <div className="rounded-3xl border bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h3 className="font-black">Respostas identificadas</h3><p className="text-sm text-slate-500">A professora pode editar qualquer resposta.</p></div></div>
-        {!perfect && <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>Dica:</b> a leitura não ficou em 100%. Procure um lugar melhor iluminado e, se possível, use o flash da câmera para escanear novamente.</div>}
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">{answers.slice(0,total).map((answer,index)=><label key={index} className="rounded-2xl border bg-slate-50 p-3"><span className="text-sm font-black">Questão {index+1}</span><select value={answer} onChange={e=>onChange(index,e.target.value as Answer)} className="mt-2 w-full rounded-xl border bg-white px-2 py-2 font-bold">{alternatives.map(a=><option key={a}>{a}</option>)}</select></label>)}</div>
-        <button onClick={onConfirm} disabled={saving} className="mt-5 w-full rounded-2xl bg-emerald-600 py-4 font-black text-white disabled:opacity-50">{saving ? "Salvando..." : "Confirmar e salvar resultado"}</button>
-      </div></div>
-  </section>;
-}
-
-// ======================================================
-// CONFIGURAÇÕES
-// ======================================================
-function SettingsPage({ settings, onSave }: { settings: { atividade1:{nota:number;questoes:number}; atividade2:{nota:number;questoes:number}; atividade3:{nota:number;questoes:number} }; onSave: (next: typeof settings) => Promise<void> }) {
-  const [local, setLocal] = useState(settings);
-  useEffect(() => setLocal(settings), [settings]);
-  const update = (key: keyof typeof local, field: "nota" | "questoes", value: number) => setLocal(current => ({...current, [key]: {...current[key], [field]: value}}));
-  return <section className="mx-auto max-w-4xl"><div className="mb-6"><p className="text-sm font-bold text-blue-600">CONFIGURAÇÕES</p><h2 className="mt-1 text-3xl font-black">Padrão das avaliações</h2><p className="mt-2 text-slate-500">Defina uma vez o nome, nota e quantidade de questões de cada atividade.</p></div><div className="space-y-4 rounded-3xl border bg-white p-5 shadow-sm">{(["atividade1","atividade2","atividade3"] as const).map((key,index)=><div key={key} className="grid gap-3 rounded-2xl border p-4 sm:grid-cols-3"><div className="flex items-center font-black">Atividade {index+1}</div><label><span className="mb-1 block text-xs font-bold text-slate-500">Nota</span><input type="number" min="0" step="0.1" value={local[key].nota} onChange={e=>update(key,"nota",Number(e.target.value))} className="w-full rounded-xl border px-3 py-2" /></label><label><span className="mb-1 block text-xs font-bold text-slate-500">Questões</span><input type="number" min="1" value={local[key].questoes} onChange={e=>update(key,"questoes",Number(e.target.value))} className="w-full rounded-xl border px-3 py-2" /></label></div>)}<p className="rounded-2xl bg-blue-50 p-4 text-sm text-blue-900">Na correção, cada questão vale automaticamente <b>nota ÷ número de questões</b>.</p><button onClick={()=>void onSave(local)} className="w-full rounded-2xl bg-blue-600 py-4 font-black text-white">Salvar configurações</button></div></section>;
+  return (
+    <section className="mx-auto max-w-5xl">
+      <div className="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold text-blue-600">
+            RESULTADO DA LEITURA
+          </p>
+          <h2 className="mt-1 text-3xl font-black">Confira antes de salvar</h2>
+          <p className="mt-2 text-slate-500">
+            {student.nome} • {avaliacao.nomeAtividade || avaliacao.titulo} -{" "}
+            {avaliacao.disciplina}
+          </p>
+        </div>
+        <button
+          onClick={onBack}
+          className="rounded-xl border bg-white px-4 py-2 text-sm font-bold"
+        >
+          Voltar
+        </button>
+      </div>
+      <div className="grid gap-5 md:grid-cols-[220px_1fr]">
+        <div className="rounded-3xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Nota</p>
+          <div className="mt-2 text-5xl font-black text-blue-600">
+            {score.toFixed(2)}
+          </div>
+          <p className="mt-2 font-bold">
+            {hits}/{total} acertos
+          </p>
+          <p className="mt-4 text-sm text-slate-500">
+            Leitura: {Math.round(confidence * 100)}%
+          </p>
+        </div>
+        <div className="rounded-3xl border bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-black">Respostas identificadas</h3>
+              <p className="text-sm text-slate-500">
+                A professora pode editar qualquer resposta.
+              </p>
+            </div>
+          </div>
+          {!perfect && (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <b>Dica:</b> a leitura não ficou em 100%. Procure um lugar melhor
+              iluminado e, se possível, use o flash da câmera para escanear
+              novamente.
+            </div>
+          )}
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {answers.slice(0, total).map((answer, index) => (
+              <label key={index} className="rounded-2xl border bg-slate-50 p-3">
+                <span className="text-sm font-black">Questão {index + 1}</span>
+                <select
+                  value={answer}
+                  onChange={(e) => onChange(index, e.target.value as Answer)}
+                  className="mt-2 w-full rounded-xl border bg-white px-2 py-2 font-bold"
+                >
+                  {alternatives.map((a) => (
+                    <option key={a}>{a}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <button
+            onClick={onConfirm}
+            disabled={saving}
+            className="mt-5 w-full rounded-2xl bg-emerald-600 py-4 font-black text-white disabled:opacity-50"
+          >
+            {saving ? "Salvando..." : "Confirmar e salvar resultado"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 // ======================================================
@@ -1699,7 +2065,9 @@ function Setup({
   saving,
 }: {
   nomeAtividade: "Atividade 1" | "Atividade 2" | "Atividade 3";
-  setNomeAtividade: (value: "Atividade 1" | "Atividade 2" | "Atividade 3") => void;
+  setNomeAtividade: (
+    value: "Atividade 1" | "Atividade 2" | "Atividade 3",
+  ) => void;
   notaMaxima: number;
   setNotaMaxima: (value: number) => void;
   bimestre: string;
@@ -1729,19 +2097,46 @@ function Setup({
       <div className="space-y-5 rounded-3xl border bg-white p-5 shadow-sm md:p-7">
         <div className="grid gap-4 md:grid-cols-3">
           <label>
-            <span className="mb-2 block text-sm font-bold">Nome da avaliação</span>
-            <select value={nomeAtividade} onChange={(event) => { const value = event.target.value as typeof nomeAtividade; setNomeAtividade(value); }} className="w-full rounded-2xl border bg-white px-4 py-3">
-              <option>Atividade 1</option><option>Atividade 2</option><option>Atividade 3</option>
+            <span className="mb-2 block text-sm font-bold">
+              Nome da avaliação
+            </span>
+            <select
+              value={nomeAtividade}
+              onChange={(event) => {
+                const value = event.target.value as typeof nomeAtividade;
+                setNomeAtividade(value);
+              }}
+              className="w-full rounded-2xl border bg-white px-4 py-3"
+            >
+              <option>Atividade 1</option>
+              <option>Atividade 2</option>
+              <option>Atividade 3</option>
             </select>
           </label>
           <label>
-            <span className="mb-2 block text-sm font-bold">Nota da avaliação</span>
-            <input type="number" min="0" step="0.1" value={notaMaxima} onChange={(event) => setNotaMaxima(Number(event.target.value))} className="w-full rounded-2xl border px-4 py-3" />
+            <span className="mb-2 block text-sm font-bold">
+              Nota da avaliação
+            </span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={notaMaxima}
+              onChange={(event) => setNotaMaxima(Number(event.target.value))}
+              className="w-full rounded-2xl border px-4 py-3"
+            />
           </label>
           <label>
             <span className="mb-2 block text-sm font-bold">Bimestre</span>
-            <select value={bimestre} onChange={(event) => setBimestre(event.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3">
-              <option>1º Bimestre</option><option>2º Bimestre</option><option>3º Bimestre</option><option>4º Bimestre</option>
+            <select
+              value={bimestre}
+              onChange={(event) => setBimestre(event.target.value)}
+              className="w-full rounded-2xl border bg-white px-4 py-3"
+            >
+              <option>1º Bimestre</option>
+              <option>2º Bimestre</option>
+              <option>3º Bimestre</option>
+              <option>4º Bimestre</option>
             </select>
           </label>
 
@@ -1975,151 +2370,52 @@ function ScanPage({
 }
 
 // ======================================================
-// RESULTADOS
+// CADASTRAR NOTAS
 // ======================================================
-
-function Results({
-  results,
-  avaliacoes,
-  turmas,
-  onExport,
+function GradesPage({
+  students, turmas, grades, results, avaliacoes, onSave, onExport,
 }: {
+  students: Student[];
+  turmas: Turma[];
+  grades: Record<string, GradeEntry>;
   results: Result[];
   avaliacoes: Avaliacao[];
-  turmas: Turma[];
+  onSave: (student: Student, values: { atv1?: number; atv2?: number; atv3?: number }, disciplina: string, bimestre: string) => Promise<void>;
   onExport: () => void;
 }) {
-  const [avaliacaoId, setAvaliacaoId] = useState("");
-
   const [turmaId, setTurmaId] = useState("");
+  const [disciplina, setDisciplina] = useState("Matemática");
+  const [bimestre, setBimestre] = useState("4º Bimestre");
+  const [drafts, setDrafts] = useState<Record<string, {atv1?: number; atv2?: number; atv3?: number}>>({});
+  const turmaStudents = students.filter((s) => !turmaId || s.turmaId === turmaId);
+  const activities = avaliacoes.filter((a) => a.disciplina === disciplina && a.bimestre === bimestre && (!turmaId || a.turmaId === turmaId));
 
-  const [aluno, setAluno] = useState("");
+  useEffect(() => {
+    const next: typeof drafts = {};
+    turmaStudents.forEach((student) => {
+      const grade = Object.values(grades).find((g) => g.studentId === student.id && g.disciplina === disciplina && g.bimestre === bimestre);
+      const scanned = results.find((r) => r.studentId === student.id && r.disciplina === disciplina && r.bimestre === bimestre && r.nomeAtividade === "Atividade 3");
+      next[student.id] = { atv1: grade?.atv1, atv2: grade?.atv2, atv3: grade?.atv3 ?? scanned?.score };
+    });
+    setDrafts(next);
+  }, [turmaId, disciplina, bimestre, students, grades, results]);
 
-  const filtered = useMemo(
-    () =>
-      results.filter((result) => {
-        const matchAvaliacao =
-          !avaliacaoId || result.avaliacaoId === avaliacaoId;
+  const setValue = (id: string, field: "atv1" | "atv2" | "atv3", value: string) => {
+    setDrafts((current) => ({ ...current, [id]: { ...current[id], [field]: value === "" ? undefined : Number(value) } }));
+  };
 
-        const matchTurma = !turmaId || result.turmaId === turmaId;
-
-        const matchAluno =
-          !aluno.trim() ||
-          result.student.toLowerCase().includes(aluno.trim().toLowerCase());
-
-        return matchAvaliacao && matchTurma && matchAluno;
-      }),
-    [results, avaliacaoId, turmaId, aluno],
-  );
-
-  return (
-    <section>
-      <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <p className="text-sm font-bold text-blue-600">RESULTADOS</p>
-
-          <h2 className="mt-1 text-3xl font-black">Correções registradas</h2>
-
-          <p className="mt-2 text-slate-500">
-            {filtered.length}
-            {" resultado(s) encontrado(s)."}
-          </p>
-        </div>
-
-        <button
-          onClick={onExport}
-          disabled={!filtered.length}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white disabled:opacity-40"
-        >
-          <FileSpreadsheet size={18} />
-          Exportar Excel
-        </button>
-      </div>
-
-      <div className="mb-5 grid gap-3 rounded-3xl border bg-white p-4 shadow-sm md:grid-cols-3">
-        <select
-          value={avaliacaoId}
-          onChange={(event) => setAvaliacaoId(event.target.value)}
-          className="rounded-2xl border bg-white px-4 py-3"
-        >
-          <option value="">Todas as avaliações</option>
-
-          {avaliacoes.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.titulo}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={turmaId}
-          onChange={(event) => setTurmaId(event.target.value)}
-          className="rounded-2xl border bg-white px-4 py-3"
-        >
-          <option value="">Todas as turmas</option>
-
-          {turmas.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.nome}
-              {" — "}
-              {item.ano}
-            </option>
-          ))}
-        </select>
-
-        <input
-          value={aluno}
-          onChange={(event) => setAluno(event.target.value)}
-          className="rounded-2xl border px-4 py-3 outline-none focus:border-blue-500"
-          placeholder="Buscar aluno..."
-        />
-      </div>
-
-      <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-        {!filtered.length ? (
-          <div className="p-10 text-center text-slate-500">
-            Nenhuma correção encontrada.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[950px] text-sm">
-              <thead className="bg-slate-100">
-                <tr>
-                  <th className="px-4 py-3 text-left">Aluno</th>
-
-                  <th className="px-4 py-3 text-left">Avaliação</th>
-
-                  <th className="px-4 py-3 text-left">Turma</th>
-
-                  <th className="px-4 py-3">Acertos</th>
-
-                  <th className="px-4 py-3">Nota</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {filtered.map((result) => (
-                  <tr key={result.id} className="border-t">
-                    <td className="px-4 py-4 font-bold">{result.student}</td>
-
-                    <td className="px-4 py-4">{result.nomeAtividade || result.avaliacaoNome || "—"} - {result.disciplina || "—"}</td>
-
-                    <td className="px-4 py-4">{result.turma}</td>
-
-                    <td className="px-4 py-4 text-center font-bold">
-                      {result.hits}/{result.total}
-                    </td>
-
-                    <td className="px-4 py-4 text-center font-black text-blue-600">
-                      {Number(result.score).toFixed(1)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </section>
-  );
+  return <section className="mx-auto max-w-7xl">
+    <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+      <div><p className="text-sm font-bold text-blue-600">NOTAS</p><h2 className="mt-1 text-3xl font-black">Cadastrar notas</h2><p className="mt-2 text-slate-500">Preencha Atv1 e Atv2 manualmente. A Atv3 pode vir da correção da avaliação.</p></div>
+      <button onClick={onExport} className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white"><FileSpreadsheet size={18}/> Exportar planilha</button>
+    </div>
+    <div className="mb-5 grid gap-3 rounded-3xl border bg-white p-4 shadow-sm md:grid-cols-3">
+      <select value={turmaId} onChange={(e)=>setTurmaId(e.target.value)} className="rounded-2xl border px-4 py-3"><option value="">Todas as turmas</option>{turmas.map(t=><option key={t.id} value={t.id}>{t.nome} — {t.ano}</option>)}</select>
+      <input value={disciplina} onChange={(e)=>setDisciplina(e.target.value)} className="rounded-2xl border px-4 py-3" placeholder="Disciplina" />
+      <select value={bimestre} onChange={(e)=>setBimestre(e.target.value)} className="rounded-2xl border px-4 py-3"><option>1º Bimestre</option><option>2º Bimestre</option><option>3º Bimestre</option><option>4º Bimestre</option></select>
+    </div>
+    {activities.length > 0 && <div className="mb-4 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900">Avaliações encontradas: {activities.map(a => a.nomeAtividade || a.titulo).join(", ")}</div>}
+    <div className="overflow-x-auto rounded-3xl border bg-white shadow-sm"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-100"><tr><th className="px-4 py-3 text-left">Aluno</th><th className="px-4 py-3">Atv1</th><th className="px-4 py-3">Atv2</th><th className="px-4 py-3">Atv3</th><th className="px-4 py-3">Média</th><th className="px-4 py-3">Salvar</th></tr></thead><tbody>{turmaStudents.map(student=>{const d=drafts[student.id]||{}; const vals=[d.atv1,d.atv2,d.atv3].filter((v):v is number=>typeof v==='number'); const media=vals.length?(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2):"—"; return <tr key={student.id} className="border-t"><td className="px-4 py-4 font-bold">{student.nome}</td><td className="px-4 py-3"><input type="number" min="0" step="0.1" value={d.atv1 ?? ""} onChange={e=>setValue(student.id,"atv1",e.target.value)} className="w-24 rounded-xl border px-3 py-2 text-center" /></td><td className="px-4 py-3"><input type="number" min="0" step="0.1" value={d.atv2 ?? ""} onChange={e=>setValue(student.id,"atv2",e.target.value)} className="w-24 rounded-xl border px-3 py-2 text-center" /></td><td className="px-4 py-3"><input type="number" min="0" step="0.1" value={d.atv3 ?? ""} onChange={e=>setValue(student.id,"atv3",e.target.value)} className="w-24 rounded-xl border bg-slate-50 px-3 py-2 text-center" /></td><td className="px-4 py-4 text-center font-black text-blue-600">{media}</td><td className="px-4 py-3 text-center"><button onClick={()=>onSave(student,d,disciplina,bimestre)} className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white">Salvar</button></td></tr>})}</tbody></table>{!turmaStudents.length&&<div className="p-10 text-center text-slate-500">Nenhum aluno encontrado.</div>}</div>
+  </section>;
 }
+
