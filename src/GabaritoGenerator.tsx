@@ -43,33 +43,6 @@ export const OMR_TEMPLATE = {
 } as const;
 
 /**
- * Retorna a posição exata de uma bolha.
- */
-export function getBubblePosition(question: number, answer: GabaritoAnswer) {
-  if (question < 1 || question > 10) {
-    throw new Error("A questão deve estar entre 1 e 10.");
-  }
-
-  const answerIndex = ALTERNATIVES.indexOf(answer);
-
-  if (answerIndex === -1) {
-    throw new Error("Alternativa inválida.");
-  }
-
-  const isRight = question >= 6;
-
-  const row = isRight ? question - 6 : question - 1;
-
-  const group = isRight ? OMR_TEMPLATE.right : OMR_TEMPLATE.left;
-
-  return {
-    x: group.bubbleStartX + answerIndex * OMR_TEMPLATE.bubble.step,
-
-    y: OMR_TEMPLATE.rows.startY + row * OMR_TEMPLATE.rows.stepY,
-  };
-}
-
-/**
  * ============================================================
  * SVG
  * ============================================================

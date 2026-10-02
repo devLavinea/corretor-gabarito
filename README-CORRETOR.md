@@ -28,7 +28,7 @@ Configure `src/firebase.ts` e ative o login anônimo. Veja `FIREBASE-CONFIGURACA
 
 ## OMR
 
-A câmera está preparada para a leitura. O algoritmo de reconhecimento das bolhas ainda precisa ser calibrado de acordo com a folha de respostas definitiva. O sistema não usa QR Code.
+A câmera faz a leitura OMR da folha padronizada de 10 questões. O sistema não usa QR Code.
 
 ## Leitura OMR — melhorias de precisão
 

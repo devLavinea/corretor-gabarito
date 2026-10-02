@@ -1,30 +1,45 @@
 # Corretor de Gabaritos
 
-PWA inicial para professores corrigirem provas de 10 questões.
+PWA para professores cadastrarem turmas e alunos, criarem avaliações de 10 questões e corrigirem gabaritos por leitura OMR.
 
 ## Incluído nesta versão
+
 - React + TypeScript + Vite
 - Tailwind CSS
-- Layout responsivo para celular/computador
-- Cadastro de avaliação e gabarito oficial (10 questões, A-E)
-- Leitor de QR Code pela câmera usando `html5-qrcode`
-- Registro de correção de teste
-- Cálculo da nota em escala 0–10
-- Exportação dos resultados para Excel com `xlsx`
+- Layout responsivo para celular e computador
+- Cadastro de turmas e alunos
+- Criação de avaliações com gabarito oficial
+- Folha de gabarito em A4 com 10 questões e alternativas A-D
+- Leitura OMR pela câmera do dispositivo
+- Revisão das respostas identificadas antes da confirmação
+- Cálculo e armazenamento dos resultados no Firebase
+- Cadastro manual de notas (Atv1, Atv2 e Atv3)
+- Exportação das notas e resultados para Excel
 - Manifest PWA básico
 
-## Próxima implementação: OMR
-O fluxo de leitura do papel deve ser desenvolvido como OMR (Optical Mark Recognition): detectar o contorno/alinhamento da folha, localizar as 50 bolhas (10 x 5), medir o preenchimento de cada bolha, identificar marcações duplas/ausentes e pedir confirmação quando houver baixa confiança.
+## Leitura OMR
+
+O leitor usa os quatro marcadores técnicos da folha para alinhar a imagem e analisa o preenchimento das bolhas por contraste local. Leituras ambíguas ficam bloqueadas para revisão antes de salvar.
+
+A folha oficial possui:
+
+- 10 questões;
+- alternativas A, B, C e D;
+- questões 01 a 05 no bloco esquerdo;
+- questões 06 a 10 no bloco direito;
+- marcadores técnicos nos quatro cantos.
 
 ## Instalação
+
 ```bash
 npm install
 npm run dev
 ```
 
-Para build:
+Para gerar a versão de produção:
+
 ```bash
 npm run build
 ```
 
-> A câmera exige HTTPS em produção (ou localhost durante desenvolvimento).
+A câmera exige HTTPS em produção ou `localhost` durante o desenvolvimento.

@@ -1,20 +1,33 @@
-DEPENDÊNCIAS NOVAS
+# Dependências e estrutura
 
-No terminal do projeto corretor-gabarito, execute:
+As dependências usadas pelo projeto já estão declaradas em `package.json`.
 
-npm install jspdf docx
+Instalação:
 
-Depois:
+```bash
+npm install
+```
 
+Desenvolvimento:
+
+```bash
+npm run dev
+```
+
+Build:
+
+```bash
 npm run build
+```
 
-git add .
-git commit -m "Adiciona gabarito A4 e leitura OMR"
-git push origin main
+## Principais arquivos
 
-Arquivos desta correção:
-- App.tsx
-- GabaritoGenerator.tsx
-- OMRScanner.tsx
+- `src/App.tsx` — aplicação principal e navegação.
+- `src/GabaritoGenerator.tsx` — geração da folha de gabarito.
+- `src/OMRScanner.tsx` — leitura OMR pela câmera.
+- `src/exportExcel.ts` — exportação das notas e resultados.
+- `src/firebase.ts` — inicialização do Firebase.
+- `src/index.css` — estilos globais.
+- `public/manifest.webmanifest` — configuração PWA.
 
-O modelo gerado é A4, somente "GABARITO", 10 questões, A-D, 5 à esquerda e 5 à direita, com quatro marcadores técnicos nos cantos.
+O projeto não utiliza mais o leitor de QR Code que fazia parte de uma versão anterior.

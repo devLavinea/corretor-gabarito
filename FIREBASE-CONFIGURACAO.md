@@ -6,7 +6,7 @@ No Firebase Console, abra:
 
 **Configurações do projeto → Seus aplicativos → Aplicativo da Web**
 
-Copie o objeto `firebaseConfig` e coloque os valores reais em:
+Os dados usados pelo aplicativo ficam em:
 
 ```text
 src/firebase.ts
@@ -18,38 +18,37 @@ Abra:
 
 **Authentication → Sign-in method → Anonymous → Ativar**
 
-A professora não precisará fazer login. O próprio sistema cria uma sessão anônima para acessar o Firestore.
+A professora não precisa criar uma conta. O sistema inicia uma sessão anônima para acessar o Firestore.
 
 ## 3. Criar o Firestore
 
 Abra **Firestore Database → Criar banco de dados**.
 
-Não é necessário criar manualmente a coleção `alunos`. Ela será criada quando Marineide cadastrar o primeiro aluno.
+As coleções são criadas conforme os dados são cadastrados. O aplicativo utiliza:
 
-## 4. Campos de `alunos`
+- `turmas`
+- `alunos`
+- `avaliacoes`
+- `resultados`
+- `notas`
+- `configuracoes`
 
-O sistema usa somente:
+## 4. Regras do Firestore
 
-- `nome` — string
-- `turma` — string
-- `criadoEm` — timestamp automático
+O arquivo `firestore.rules` está incluído no projeto. A versão atual contempla `alunos`, `resultados` e `avaliacoes`.
 
-## 5. Regras do Firestore
-
-O arquivo `firestore.rules` já está incluído. Publique essas regras no Firebase Console ou pelo Firebase CLI.
-
-Elas permitem acesso somente a usuários autenticados:
-
-```text
-request.auth != null
-```
+Como o aplicativo também utiliza `turmas`, `notas` e `configuracoes`, confirme que essas coleções também estão contempladas nas regras publicadas antes de usar o sistema em produção.
 
 **Não use `allow read, write: if true` em produção.**
 
-## 6. Se aparecer `auth/operation-not-allowed`
+## 5. Se aparecer `auth/operation-not-allowed`
 
 Isso significa que o login anônimo ainda não foi ativado. Volte ao passo 2.
 
-## 7. Se aparecer `permission-denied`
+## 6. Se aparecer `permission-denied`
 
-Verifique se as regras publicadas são as mesmas do arquivo `firestore.rules` e se a autenticação anônima está ativa.
+Verifique se:
+
+1. a autenticação anônima está ativa;
+2. as regras publicadas estão atualizadas;
+3. as coleções utilizadas pelo aplicativo estão contempladas nas regras.
