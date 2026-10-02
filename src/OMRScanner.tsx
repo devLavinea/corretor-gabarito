@@ -734,6 +734,169 @@ function measureBubble(
   };
 }
 
+type IndependentBubbleCheck = {
+  score: number;
+  inkRatio: number;
+  coreDarkRatio: number;
+  edgeDarkRatio: number;
+  background: number;
+};
+
+/**
+ * SEGUNDO MÉTODO DE VERIFICAÇÃO
+ *
+ * Este método é propositalmente diferente de measureBubble():
+ * - divide a bolha em regiões radiais;
+ * - estima o papel local por uma faixa externa;
+ * - procura tinta em uma área maior que o círculo;
+ * - mede proporção de pixels escuros em vez de depender da média/mediana.
+ *
+ * Assim, uma marca torta ou que ultrapasse um pouco a borda ainda pode ser
+ * reconhecida, enquanto a borda impressa da bolha não é suficiente para
+ * produzir uma pontuação alta.
+ */
+function verifyBubbleByInkDensity(
+  ctx: CanvasRenderingContext2D,
+  center: Point,
+  radius: number,
+): IndependentBubbleCheck {
+  const outer = radius * 1.48;
+  const size = Math.max(24, Math.ceil(outer * 2 + 6));
+  const x = Math.round(center.x - size / 2);
+  const y = Math.round(center.y - size / 2);
+
+  if (
+    x < 0 ||
+    y < 0 ||
+    x + size > ctx.canvas.width ||
+    y + size > ctx.canvas.height
+  ) {
+    return {
+      score: 0,
+      inkRatio: 0,
+      coreDarkRatio: 0,
+      edgeDarkRatio: 0,
+      background: 255,
+    };
+  }
+
+  const image = ctx.getImageData(x, y, size, size);
+  const c = size / 2;
+
+  const background: number[] = [];
+  const core: number[] = [];
+  const body: number[] = [];
+  const outside: number[] = [];
+
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      const dx = px + 0.5 - c;
+      const dy = py + 0.5 - c;
+      const ratio = Math.hypot(dx, dy) / radius;
+      const gray = getGray(image.data, (py * size + px) * 4);
+
+      // Papel: suficientemente afastado da borda impressa.
+      if (ratio >= 1.24 && ratio <= 1.43) {
+        background.push(gray);
+      }
+
+      // Área principal da marca.
+      if (ratio <= 0.78) {
+        core.push(gray);
+      } else if (ratio > 1.03 && ratio <= 1.22) {
+        // Área onde uma marca que "escapou" do círculo pode aparecer.
+        body.push(gray);
+      } else if (ratio > 0.78 && ratio <= 1.03) {
+        // Região próxima da borda: usada apenas como evidência secundária.
+        outside.push(gray);
+      }
+    }
+  }
+
+  const bg = median(background);
+  const sortedCore = [...core].sort((a, b) => a - b);
+
+  // Em iluminação escura, o limiar acompanha o papel local.
+  // Em iluminação clara, continua exigindo contraste real.
+  const threshold = Math.max(24, Math.min(105, bg - Math.max(18, bg * 0.22)));
+
+  const countDark = (values: number[]) =>
+    values.length
+      ? values.filter((value) => value <= threshold).length / values.length
+      : 0;
+
+  const coreDarkRatio = countDark(core);
+  const edgeDarkRatio = countDark(body) * 0.65 + countDark(outside) * 0.35;
+
+  // Percentil baixo captura uma marca parcial sem exigir preenchimento total.
+  const p25 = sortedCore.length
+    ? sortedCore[Math.floor((sortedCore.length - 1) * 0.25)]
+    : 255;
+
+  const coreContrast = clamp01((bg - p25) / Math.max(40, bg));
+  const inkRatio = clamp01(coreDarkRatio * 0.72 + edgeDarkRatio * 0.28);
+
+  const score = clamp01(
+    coreDarkRatio * 0.52 + edgeDarkRatio * 0.18 + coreContrast * 0.3,
+  );
+
+  return {
+    score,
+    inkRatio,
+    coreDarkRatio,
+    edgeDarkRatio,
+    background: bg,
+  };
+}
+
+function verifyQuestionIndependently(
+  ctx: CanvasRenderingContext2D,
+  centers: Point[],
+  radius: number,
+) {
+  const checks = centers.map((center) =>
+    verifyBubbleByInkDensity(ctx, center, radius),
+  );
+
+  const ordered = checks
+    .map((check, index) => ({ check, index }))
+    .sort((a, b) => b.check.score - a.check.score);
+
+  const best = ordered[0];
+  const second = ordered[1];
+
+  if (!best || !second) {
+    return {
+      bestIndex: -1,
+      bestScore: 0,
+      secondScore: 0,
+      agreement: false,
+      checks,
+    };
+  }
+
+  // A segunda verificação também precisa enxergar tinta de verdade.
+  const hasInk =
+    best.check.score >= 0.075 &&
+    (best.check.coreDarkRatio >= 0.08 ||
+      best.check.inkRatio >= 0.1 ||
+      best.check.edgeDarkRatio >= 0.08);
+
+  // Se as duas primeiras alternativas ficarem próximas, o método não
+  // inventa uma resposta.
+  const separation =
+    best.check.score - second.check.score >=
+    Math.max(0.045, best.check.score * 0.2);
+
+  return {
+    bestIndex: hasInk ? best.index : -1,
+    bestScore: best.check.score,
+    secondScore: second.check.score,
+    agreement: hasInk && separation,
+    checks,
+  };
+}
+
 function readQuestion(
   ctx: CanvasRenderingContext2D,
   homography: Homography,
@@ -751,16 +914,24 @@ function readQuestion(
     bubbleStep * (OMR_TEMPLATE.bubble.radius / OMR_TEMPLATE.bubble.step),
   );
 
+  const centers: Point[] = [];
+
   for (let alternative = 0; alternative < 4; alternative++) {
     const center = transformPoint(
       getBubbleCenter(questionIndex, alternative),
       homography,
     );
 
+    centers.push(center);
+
     const measurement = measureBubble(ctx, center, radius);
     measurements.push(measurement);
     scores.push(measurement.score);
   }
+
+  // SEGUNDA LEITURA INDEPENDENTE.
+  // Ela analisa densidade de tinta por outra metodologia.
+  const independent = verifyQuestionIndependently(ctx, centers, radius);
 
   const ordered = scores
     .map((value, index) => ({ value, index }))
@@ -782,8 +953,7 @@ function readQuestion(
   const bestMeasurement = measurements[best.index];
   const secondMeasurement = measurements[second.index];
 
-  // Limiares baixos: a separação entre as alternativas também participa
-  // da decisão. Isso permite ler marcas claras mesmo sob iluminação ruim.
+  // Método 1: contraste/área.
   const bestMarked =
     best.value >= 0.035 &&
     (bestMeasurement.coreContrast >= 0.012 ||
@@ -796,14 +966,24 @@ function readQuestion(
       secondMeasurement.darkRatio >= 0.055 ||
       secondMeasurement.bodyContrast >= 0.018);
 
-  // Só sinaliza dupla marca quando a segunda alternativa realmente compete
-  // com a primeira. Resíduos leves não devem bloquear uma marca válida.
+  // Método 2: densidade de tinta.
+  const independentBestIsSame = independent.bestIndex === best.index;
+  const independentSecondIsCompetitive =
+    independent.secondScore >= Math.max(0.075, independent.bestScore * 0.72);
+
+  // Se um método aponta para uma alternativa e o outro aponta para outra,
+  // NÃO escolhemos uma delas. A questão fica para revisão.
+  const verificationConflict =
+    bestMarked && (!independentBestIsSame || !independent.agreement);
+
+  // Duas bolinhas realmente marcadas também não são resolvidas
+  // automaticamente.
   const ambiguous =
     bestMarked &&
     secondMarked &&
     second.value >= Math.max(0.095, best.value * 0.78);
 
-  if (!bestMarked) {
+  if (!bestMarked || verificationConflict) {
     return {
       answer: null,
       confidence: 0,
@@ -839,14 +1019,27 @@ function readQuestion(
 
   const separation = clamp01(difference / Math.max(0.045, best.value * 0.42));
 
-  const confidence = clamp01(separation * 0.58 + strength * 0.42);
+  // Só consideramos alta confiança quando os dois métodos concordam.
+  const verificationAgreement = clamp01(
+    0.5 +
+      (independent.bestScore - independent.secondScore) /
+        Math.max(0.2, independent.bestScore * 2),
+  );
+
+  const confidence = clamp01(
+    separation * 0.46 + strength * 0.34 + verificationAgreement * 0.2,
+  );
 
   return {
     answer: ALTERNATIVES[best.index],
-    confidence: ambiguous ? 0 : confidence,
+    confidence:
+      ambiguous || verificationConflict || independentSecondIsCompetitive
+        ? 0
+        : confidence,
     scores,
     candidates,
-    ambiguous,
+    ambiguous:
+      ambiguous || verificationConflict || independentSecondIsCompetitive,
   };
 }
 
