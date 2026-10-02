@@ -429,7 +429,8 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
           componentHeight < minSize ||
           componentWidth > maxSize ||
           componentHeight > maxSize
-        ) continue;
+        )
+          continue;
 
         const ratio = componentWidth / componentHeight;
         if (ratio < 0.55 || ratio > 1.8) continue;
@@ -455,9 +456,10 @@ function detectMarkers(canvas: HTMLCanvasElement): MarkerSet | null {
   };
 
   const adaptiveCandidates = collectCandidates(adaptiveMask);
-  const candidates = adaptiveCandidates.length >= 4
-    ? adaptiveCandidates
-    : collectCandidates(absoluteMask);
+  const candidates =
+    adaptiveCandidates.length >= 4
+      ? adaptiveCandidates
+      : collectCandidates(absoluteMask);
 
   if (candidates.length < 4) return null;
 
@@ -558,22 +560,38 @@ function clamp01(value: number) {
 
 function median(values: number[]) {
   if (!values.length) return 255;
-  values.sort((a, b) => a - b);
-  const middle = Math.floor(values.length / 2);
-  return values.length % 2
-    ? values[middle]
-    : (values[middle - 1] + values[middle]) / 2;
+  const copy = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(copy.length / 2);
+  return copy.length % 2 ? copy[middle] : (copy[middle - 1] + copy[middle]) / 2;
 }
 
-function measureBubble(
+function percentile(values: number[], p: number) {
+  if (!values.length) return 255;
+  const copy = [...values].sort((a, b) => a - b);
+  const index = Math.max(
+    0,
+    Math.min(copy.length - 1, Math.round((copy.length - 1) * p)),
+  );
+  return copy[index];
+}
+
+/*
+ * Leitura tolerante da bolha:
+ * - não depende de brilho absoluto;
+ * - ignora a borda impressa;
+ * - aceita preenchimento parcial;
+ * - aceita marca que ultrapassa um pouco o círculo;
+ * - mede o papel ao redor da própria bolha;
+ * - usa uma pequena varredura de posições para compensar pequenos erros
+ *   de perspectiva/alinhamento.
+ */
+function measureBubbleAtCenter(
   ctx: CanvasRenderingContext2D,
   center: Point,
   radius: number,
 ): BubbleMeasurement {
-  // O fundo de cada bolha é medido na própria vizinhança. Isso reduz muito
-  // o efeito de sombra, iluminação lateral e folhas fotografadas sob luz ruim.
-  const outer = radius * 1.82;
-  const size = Math.max(16, Math.ceil(outer * 2 + 6));
+  const outer = radius * 1.95;
+  const size = Math.max(24, Math.ceil(outer * 2 + 8));
   const x = Math.round(center.x - size / 2);
   const y = Math.round(center.y - size / 2);
 
@@ -596,7 +614,7 @@ function measureBubble(
   const image = ctx.getImageData(x, y, size, size);
   const centerPoint = size / 2;
   const backgroundSamples: number[] = [];
-  const coreSamples: number[] = [];
+  const innerSamples: number[] = [];
   const bodySamples: number[] = [];
 
   for (let py = 0; py < size; py++) {
@@ -606,54 +624,113 @@ function measureBubble(
       const ratio = Math.hypot(dx, dy) / radius;
       const gray = getGray(image.data, (py * size + px) * 4);
 
-      // A borda impressa da bolha não entra no fundo nem no núcleo.
-      if (ratio >= 1.38 && ratio <= 1.72) {
+      // Papel local. A faixa fica fora da borda impressa.
+      if (ratio >= 1.42 && ratio <= 1.82) {
         backgroundSamples.push(gray);
-      } else if (ratio <= 0.58) {
-        coreSamples.push(gray);
-      } else if (ratio <= 0.88) {
+      }
+
+      // Núcleo mais amplo. Incluímos uma pequena margem para marcas tortas.
+      if (ratio <= 0.72) {
+        innerSamples.push(gray);
+      } else if (ratio <= 1.08) {
         bodySamples.push(gray);
       }
     }
   }
 
   const backgroundMean = median(backgroundSamples);
-  const coreMean = median(coreSamples);
+  const innerMedian = median(innerSamples);
+  const innerLow = percentile(innerSamples, 0.35);
   const bodyMean = median(bodySamples);
+  const denominator = Math.max(30, backgroundMean);
 
-  // Mede quantos pixels do núcleo ficaram claramente mais escuros que o
-  // próprio fundo. Uma marca incompleta ainda consegue pontuar aqui.
-  const localDarkThreshold = Math.max(
-    18,
-    Math.min(55, backgroundMean * 0.18),
-  );
-  const darkPixels = coreSamples.filter(
-    (value) => value <= backgroundMean - localDarkThreshold,
-  ).length;
-  const darkRatio = coreSamples.length
-    ? darkPixels / coreSamples.length
-    : 0;
-
-  const denominator = Math.max(35, backgroundMean);
-  const coreContrast = clamp01((backgroundMean - coreMean) / denominator);
+  const innerContrast = clamp01((backgroundMean - innerMedian) / denominator);
+  const strongInkContrast = clamp01((backgroundMean - innerLow) / denominator);
   const bodyContrast = clamp01((backgroundMean - bodyMean) / denominator);
 
-  // Combina intensidade, área preenchida e corpo da marca. Assim uma bolinha
-  // parcialmente preenchida continua sendo reconhecida sem depender de um
-  // valor absoluto de brilho.
+  // Limiar relativo à iluminação local.
+  const localDarkThreshold = Math.max(10, Math.min(48, backgroundMean * 0.16));
+
+  const darkPixels = innerSamples.filter(
+    (value) => value <= backgroundMean - localDarkThreshold,
+  ).length;
+
+  const darkRatio = innerSamples.length ? darkPixels / innerSamples.length : 0;
+
+  // Evidência de tinta, não apenas da borda impressa.
   const score = clamp01(
-    coreContrast * 0.48 +
-      darkRatio * 0.37 +
+    innerContrast * 0.28 +
+      strongInkContrast * 0.25 +
+      darkRatio * 0.32 +
       bodyContrast * 0.15,
   );
 
   return {
     score,
-    coreContrast,
+    coreContrast: Math.max(innerContrast, strongInkContrast),
     bodyContrast,
     darkRatio,
-    coreMean,
+    coreMean: innerMedian,
     backgroundMean,
+  };
+}
+
+function measureBubble(
+  ctx: CanvasRenderingContext2D,
+  center: Point,
+  radius: number,
+): BubbleMeasurement {
+  // Pequenos deslocamentos tornam a leitura muito mais tolerante a:
+  // perspectiva, impressão, enquadramento e marca feita fora do centro.
+  const offsets = [
+    { x: 0, y: 0 },
+    { x: radius * 0.18, y: 0 },
+    { x: -radius * 0.18, y: 0 },
+    { x: 0, y: radius * 0.18 },
+    { x: 0, y: -radius * 0.18 },
+    { x: radius * 0.13, y: radius * 0.13 },
+    { x: -radius * 0.13, y: radius * 0.13 },
+    { x: radius * 0.13, y: -radius * 0.13 },
+    { x: -radius * 0.13, y: -radius * 0.13 },
+  ];
+
+  const measurements = offsets.map((offset) =>
+    measureBubbleAtCenter(
+      ctx,
+      {
+        x: center.x + offset.x,
+        y: center.y + offset.y,
+      },
+      radius,
+    ),
+  );
+
+  measurements.sort((a, b) => b.score - a.score);
+
+  const best = measurements[0];
+  const second = measurements[1];
+
+  if (!best) {
+    return {
+      score: 0,
+      coreContrast: 0,
+      bodyContrast: 0,
+      darkRatio: 0,
+      coreMean: 255,
+      backgroundMean: 255,
+    };
+  }
+
+  if (!second) return best;
+
+  // A melhor leitura tem mais peso, mas precisa de confirmação espacial.
+  return {
+    score: best.score * 0.72 + second.score * 0.28,
+    coreContrast: best.coreContrast * 0.72 + second.coreContrast * 0.28,
+    bodyContrast: best.bodyContrast * 0.72 + second.bodyContrast * 0.28,
+    darkRatio: best.darkRatio * 0.72 + second.darkRatio * 0.28,
+    coreMean: best.coreMean * 0.72 + second.coreMean * 0.28,
+    backgroundMean: best.backgroundMean * 0.72 + second.backgroundMean * 0.28,
   };
 }
 
@@ -670,7 +747,7 @@ function readQuestion(
   const bubbleStep = distance(pointA, pointB);
 
   const radius = Math.max(
-    4,
+    5,
     bubbleStep * (OMR_TEMPLATE.bubble.radius / OMR_TEMPLATE.bubble.step),
   );
 
@@ -679,6 +756,7 @@ function readQuestion(
       getBubbleCenter(questionIndex, alternative),
       homography,
     );
+
     const measurement = measureBubble(ctx, center, radius);
     measurements.push(measurement);
     scores.push(measurement.score);
@@ -703,19 +781,27 @@ function readQuestion(
 
   const bestMeasurement = measurements[best.index];
   const secondMeasurement = measurements[second.index];
-  const bestMarked =
-    best.value >= 0.055 &&
-    (bestMeasurement.coreContrast >= 0.025 || bestMeasurement.darkRatio >= 0.12);
-  const secondMarked =
-    second.value >= 0.055 &&
-    (secondMeasurement.coreContrast >= 0.025 || secondMeasurement.darkRatio >= 0.12);
 
-  // Duas bolinhas realmente marcadas não são resolvidas automaticamente.
-  // O professor escolhe qual considerar.
+  // Limiares baixos: a separação entre as alternativas também participa
+  // da decisão. Isso permite ler marcas claras mesmo sob iluminação ruim.
+  const bestMarked =
+    best.value >= 0.035 &&
+    (bestMeasurement.coreContrast >= 0.012 ||
+      bestMeasurement.darkRatio >= 0.055 ||
+      bestMeasurement.bodyContrast >= 0.018);
+
+  const secondMarked =
+    second.value >= 0.035 &&
+    (secondMeasurement.coreContrast >= 0.012 ||
+      secondMeasurement.darkRatio >= 0.055 ||
+      secondMeasurement.bodyContrast >= 0.018);
+
+  // Só sinaliza dupla marca quando a segunda alternativa realmente compete
+  // com a primeira. Resíduos leves não devem bloquear uma marca válida.
   const ambiguous =
     bestMarked &&
     secondMarked &&
-    second.value >= Math.max(0.075, best.value * 0.62);
+    second.value >= Math.max(0.095, best.value * 0.78);
 
   if (!bestMarked) {
     return {
@@ -731,8 +817,10 @@ function readQuestion(
     .filter(({ value, index }) => {
       const measurement = measurements[index];
       return (
-        value >= Math.max(0.055, best.value * 0.62) &&
-        (measurement.coreContrast >= 0.02 || measurement.darkRatio >= 0.1)
+        value >= Math.max(0.04, best.value * 0.68) &&
+        (measurement.coreContrast >= 0.01 ||
+          measurement.darkRatio >= 0.05 ||
+          measurement.bodyContrast >= 0.015)
       );
     })
     .slice(0, 4)
@@ -742,10 +830,16 @@ function readQuestion(
     }));
 
   const difference = best.value - second.value;
-  const confidence = clamp01(
-    0.58 * difference / Math.max(0.08, best.value) +
-      0.42 * Math.min(1, best.value / 0.34),
+
+  const strength = clamp01(
+    best.value / 0.22 +
+      (bestMeasurement.darkRatio / 0.38) * 0.35 +
+      (bestMeasurement.coreContrast / 0.18) * 0.25,
   );
+
+  const separation = clamp01(difference / Math.max(0.045, best.value * 0.42));
+
+  const confidence = clamp01(separation * 0.58 + strength * 0.42);
 
   return {
     answer: ALTERNATIVES[best.index],
@@ -816,13 +910,19 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   async function toggleFlash() {
     const track = streamRef.current?.getVideoTracks()[0];
     if (!track) return;
-    const capabilities = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
+    const capabilities = track.getCapabilities() as MediaTrackCapabilities & {
+      torch?: boolean;
+    };
     if (!capabilities.torch) {
-      setError("O flash/lanterna não é compatível com esta câmera ou navegador.");
+      setError(
+        "O flash/lanterna não é compatível com esta câmera ou navegador.",
+      );
       return;
     }
     try {
-      await track.applyConstraints({ advanced: [{ torch: !flashOn } as MediaTrackConstraintSet] });
+      await track.applyConstraints({
+        advanced: [{ torch: !flashOn } as MediaTrackConstraintSet],
+      });
       setFlashOn((value) => !value);
       setFlashSupported(true);
     } catch (err) {
@@ -886,7 +986,9 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
         // normalmente usando a imagem capturada.
       }
 
-      const capabilities = track?.getCapabilities() as MediaTrackCapabilities & { torch?: boolean } | undefined;
+      const capabilities = track?.getCapabilities() as
+        | (MediaTrackCapabilities & { torch?: boolean })
+        | undefined;
       setFlashSupported(Boolean(capabilities?.torch));
       setFlashOn(false);
 
@@ -1174,7 +1276,9 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
         answers: current.answers.map((value, index) =>
           index === questionNumber - 1 ? answer : value,
         ),
-        uncertain: current.uncertain.filter((value) => value !== questionNumber),
+        uncertain: current.uncertain.filter(
+          (value) => value !== questionNumber,
+        ),
         ambiguous: nextAmbiguous,
       };
     });
@@ -1261,7 +1365,13 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
               </div>
 
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => void toggleFlash()} disabled={!flashSupported} className={`grid h-11 w-11 place-items-center rounded-full backdrop-blur-md ${flashOn ? "bg-amber-300 text-slate-900" : "bg-black/60 text-white disabled:opacity-40"}`} aria-label="Ativar flash">
+                <button
+                  type="button"
+                  onClick={() => void toggleFlash()}
+                  disabled={!flashSupported}
+                  className={`grid h-11 w-11 place-items-center rounded-full backdrop-blur-md ${flashOn ? "bg-amber-300 text-slate-900" : "bg-black/60 text-white disabled:opacity-40"}`}
+                  aria-label="Ativar flash"
+                >
                   <span className="text-lg">⚡</span>
                 </button>
                 <button
@@ -1442,7 +1552,8 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
 
                       {result.uncertain.length > 0 && (
                         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                          <b>Atenção:</b> {Object.keys(result.ambiguous).length > 0
+                          <b>Atenção:</b>{" "}
+                          {Object.keys(result.ambiguous).length > 0
                             ? "foram detectadas duas ou mais bolinhas em algumas questões. Escolha abaixo qual resposta considerar."
                             : "algumas questões não tiveram uma marca suficientemente clara. Escolha a resposta manualmente antes de confirmar."}
                         </div>
@@ -1451,18 +1562,28 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                       {result.uncertain
                         .filter((question) => !result.ambiguous[question])
                         .map((question) => (
-                          <div key={question} className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
+                          <div
+                            key={question}
+                            className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4"
+                          >
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                               <div>
-                                <p className="font-black text-amber-950">Questão {question}: leitura insuficiente</p>
-                                <p className="mt-1 text-xs text-amber-800">Nenhuma marca ficou clara o bastante. Escolha a alternativa correta.</p>
+                                <p className="font-black text-amber-950">
+                                  Questão {question}: leitura insuficiente
+                                </p>
+                                <p className="mt-1 text-xs text-amber-800">
+                                  Nenhuma marca ficou clara o bastante. Escolha
+                                  a alternativa correta.
+                                </p>
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 {ALTERNATIVES.map((option) => (
                                   <button
                                     key={option}
                                     type="button"
-                                    onClick={() => chooseAmbiguous(question, option)}
+                                    onClick={() =>
+                                      chooseAmbiguous(question, option)
+                                    }
                                     className="grid h-11 w-11 place-items-center rounded-xl border-2 border-amber-300 bg-white font-black text-amber-900 hover:bg-amber-100"
                                   >
                                     {option}
@@ -1473,41 +1594,63 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                           </div>
                         ))}
 
-                      {Object.entries(result.ambiguous).map(([question, options]) => (
-                        <div key={question} className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <p className="font-black text-amber-950">Questão {question}: múltiplas marcações detectadas</p>
-                              <p className="mt-1 text-xs text-amber-800">Selecione a alternativa que deve ser considerada.</p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {(options.length ? options : ALTERNATIVES).map((option) => (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  onClick={() => chooseAmbiguous(Number(question), option)}
-                                  className="grid h-11 w-11 place-items-center rounded-xl border-2 border-amber-300 bg-white font-black text-amber-900 hover:bg-amber-100"
-                                >
-                                  {option}
-                                </button>
-                              ))}
+                      {Object.entries(result.ambiguous).map(
+                        ([question, options]) => (
+                          <div
+                            key={question}
+                            className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4"
+                          >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="font-black text-amber-950">
+                                  Questão {question}: múltiplas marcações
+                                  detectadas
+                                </p>
+                                <p className="mt-1 text-xs text-amber-800">
+                                  Selecione a alternativa que deve ser
+                                  considerada.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {(options.length ? options : ALTERNATIVES).map(
+                                  (option) => (
+                                    <button
+                                      key={option}
+                                      type="button"
+                                      onClick={() =>
+                                        chooseAmbiguous(
+                                          Number(question),
+                                          option,
+                                        )
+                                      }
+                                      className="grid h-11 w-11 place-items-center rounded-xl border-2 border-amber-300 bg-white font-black text-amber-900 hover:bg-amber-100"
+                                    >
+                                      {option}
+                                    </button>
+                                  ),
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
-
-                      {result.uncertain.length === 0 && result.confidence < 0.999 && (
-                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                          <b>Dica:</b> a leitura não chegou a 100%. Tente um local melhor iluminado ou ative o flash/lanterna antes de fotografar novamente.
-                        </div>
+                        ),
                       )}
 
-                      {result.uncertain.length === 0 && result.confidence >= 0.999 && (
-                        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-                          Todas as questões foram identificadas com diferença
-                          suficiente entre as alternativas.
-                        </div>
-                      )}
+                      {result.uncertain.length === 0 &&
+                        result.confidence < 0.999 && (
+                          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                            <b>Dica:</b> a leitura não chegou a 100%. Tente um
+                            local melhor iluminado ou ative o flash/lanterna
+                            antes de fotografar novamente.
+                          </div>
+                        )}
+
+                      {result.uncertain.length === 0 &&
+                        result.confidence >= 0.999 && (
+                          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                            Todas as questões foram identificadas com diferença
+                            suficiente entre as alternativas.
+                          </div>
+                        )}
 
                       <div className="mt-4 grid gap-2 sm:grid-cols-2">
                         <button
@@ -1541,10 +1684,11 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                         />
 
                         <p>
-                          A leitura usa contraste local, área preenchida e normalização da iluminação
-                          para tolerar sombras, folha mais escura e preenchimentos
-                          imperfeitos. Quando duas bolinhas parecem marcadas, o
-                          sistema não escolhe sozinho: ele pede a decisão do professor.
+                          A leitura usa contraste local, área preenchida e
+                          normalização da iluminação para tolerar sombras, folha
+                          mais escura e preenchimentos imperfeitos. Quando duas
+                          bolinhas parecem marcadas, o sistema não escolhe
+                          sozinho: ele pede a decisão do professor.
                         </p>
                       </div>
                     </div>
