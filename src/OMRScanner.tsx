@@ -1394,8 +1394,8 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   // ====================================================
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black">
-      <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-black">
+    <div className="fixed inset-0 z-9999 bg-black">
+      <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-black">
         {!preview ? (
           <>
             {/* ==================================================
@@ -1455,8 +1455,8 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
             ================================================== */}
 
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-5">
-              <div className="relative w-full max-w-[1100px]">
-                <div className="aspect-[1123/380] w-full rounded-xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+              <div className="relative w-full max-w-275">
+                <div className="aspect-1123/380 w-full rounded-xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
 
                 <div className="absolute left-0 top-0 h-8 w-8 border-l-4 border-t-4 border-white" />
 
@@ -1488,7 +1488,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                     type="button"
                     onClick={capture}
                     disabled={loading || !stream || !cameraReady}
-                    className="flex h-16 min-w-[190px] items-center justify-center gap-3 rounded-full bg-blue-600 px-7 text-base font-black text-white shadow-xl disabled:opacity-40"
+                    className="flex h-16 min-w-47.5 items-center justify-center gap-3 rounded-full bg-blue-600 px-7 text-base font-black text-white shadow-xl disabled:opacity-40"
                   >
                     <Camera size={23} />
 

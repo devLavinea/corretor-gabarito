@@ -162,11 +162,33 @@ export default function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
   const [disciplinas, setDisciplinas] = useState<string[]>(["Matemática"]);
-  const [referencias, setReferencias] = useState<string[]>(["Atv1", "Atv2", "Atv3"]);
+  const [referencias, setReferencias] = useState<string[]>([
+    "Atv1",
+    "Atv2",
+    "Atv3",
+  ]);
   const [avaliacoesConfig, setAvaliacoesConfig] = useState<AvaliacaoConfig[]>([
-    { id: "atv1", referencia: "Atv1", nome: "Atividade 1", nota: 10, questoes: 10 },
-    { id: "atv2", referencia: "Atv2", nome: "Atividade 2", nota: 10, questoes: 10 },
-    { id: "atv3", referencia: "Atv3", nome: "Atividade 3", nota: 10, questoes: 10 },
+    {
+      id: "atv1",
+      referencia: "Atv1",
+      nome: "Atividade 1",
+      nota: 10,
+      questoes: 10,
+    },
+    {
+      id: "atv2",
+      referencia: "Atv2",
+      nome: "Atividade 2",
+      nota: 10,
+      questoes: 10,
+    },
+    {
+      id: "atv3",
+      referencia: "Atv3",
+      nome: "Atividade 3",
+      nota: 10,
+      questoes: 10,
+    },
   ]);
   const [results, setResults] = useState<Result[]>([]);
 
@@ -180,15 +202,22 @@ export default function App() {
   // FORMULÁRIO DA AVALIAÇÃO
   // ====================================================
 
-  const [disciplina, setDisciplina] = useState(() => localStorage.getItem("corretor-disciplina") || "Matemática");
+  const [disciplina, setDisciplina] = useState(
+    () => localStorage.getItem("corretor-disciplina") || "Matemática",
+  );
   const [turmaId, setTurmaId] = useState("");
-  const [avaliacaoConfigId, setAvaliacaoConfigId] = useState(() => localStorage.getItem("corretor-avaliacao-config") || "atv3");
-  const [nomeAtividade, setNomeAtividade] = useState(() => localStorage.getItem("corretor-atividade") || "Atividade 3");
-  const [bimestre, setBimestre] = useState(() => localStorage.getItem("corretor-bimestre") || "4º Bimestre");
+  const [avaliacaoConfigId, setAvaliacaoConfigId] = useState(
+    () => localStorage.getItem("corretor-avaliacao-config") || "atv3",
+  );
+  const [nomeAtividade, setNomeAtividade] = useState(
+    () => localStorage.getItem("corretor-atividade") || "Atividade 3",
+  );
+  const [bimestre, setBimestre] = useState(
+    () => localStorage.getItem("corretor-bimestre") || "4º Bimestre",
+  );
   const [key, setKey] = useState<Answer[]>(Array(10).fill("A") as Answer[]);
 
   const [grades, setGrades] = useState<Record<string, GradeEntry>>({});
-
 
   // ====================================================
   // ALUNOS
@@ -374,7 +403,8 @@ export default function App() {
             gabarito,
             nomeAtividade: raw.nomeAtividade as Avaliacao["nomeAtividade"],
             referencia: raw.referencia as Avaliacao["referencia"],
-            avaliacaoConfigId: raw.avaliacaoConfigId as Avaliacao["avaliacaoConfigId"],
+            avaliacaoConfigId:
+              raw.avaliacaoConfigId as Avaliacao["avaliacaoConfigId"],
             notaMaxima: Number(raw.notaMaxima ?? 10),
             bimestre: String(raw.bimestre ?? "1º Bimestre"),
             createdAt: raw.createdAt,
@@ -427,15 +457,35 @@ export default function App() {
   async function loadSettings() {
     try {
       const snapshot = await getDocs(collection(db, "configuracoes"));
-      const evaluationDoc = snapshot.docs.find((item) => item.id === "avaliacoes");
+      const evaluationDoc = snapshot.docs.find(
+        (item) => item.id === "avaliacoes",
+      );
       const generalDoc = snapshot.docs.find((item) => item.id === "geral");
 
       if (evaluationDoc) {
         const raw = evaluationDoc.data();
         const migrated: AvaliacaoConfig[] = [
-          { id: "atv1", referencia: String(raw.atividade1?.referencia ?? "Atv1"), nome: String(raw.atividade1?.nome ?? "Atividade 1"), nota: Number(raw.atividade1?.nota ?? 10), questoes: Number(raw.atividade1?.questoes ?? 10) },
-          { id: "atv2", referencia: String(raw.atividade2?.referencia ?? "Atv2"), nome: String(raw.atividade2?.nome ?? "Atividade 2"), nota: Number(raw.atividade2?.nota ?? 10), questoes: Number(raw.atividade2?.questoes ?? 10) },
-          { id: "atv3", referencia: String(raw.atividade3?.referencia ?? "Atv3"), nome: String(raw.atividade3?.nome ?? "Atividade 3"), nota: Number(raw.atividade3?.nota ?? 10), questoes: Number(raw.atividade3?.questoes ?? 10) },
+          {
+            id: "atv1",
+            referencia: String(raw.atividade1?.referencia ?? "Atv1"),
+            nome: String(raw.atividade1?.nome ?? "Atividade 1"),
+            nota: Number(raw.atividade1?.nota ?? 10),
+            questoes: Number(raw.atividade1?.questoes ?? 10),
+          },
+          {
+            id: "atv2",
+            referencia: String(raw.atividade2?.referencia ?? "Atv2"),
+            nome: String(raw.atividade2?.nome ?? "Atividade 2"),
+            nota: Number(raw.atividade2?.nota ?? 10),
+            questoes: Number(raw.atividade2?.questoes ?? 10),
+          },
+          {
+            id: "atv3",
+            referencia: String(raw.atividade3?.referencia ?? "Atv3"),
+            nome: String(raw.atividade3?.nome ?? "Atividade 3"),
+            nota: Number(raw.atividade3?.nota ?? 10),
+            questoes: Number(raw.atividade3?.questoes ?? 10),
+          },
         ];
         setAvaliacoesConfig(migrated);
       }
@@ -446,7 +496,9 @@ export default function App() {
           ? raw.disciplinas.map((item: unknown) => String(item)).filter(Boolean)
           : [];
         const loadedReferencias = Array.isArray(raw.referencias)
-          ? raw.referencias.map((item: unknown) => String(item).trim()).filter(Boolean)
+          ? raw.referencias
+              .map((item: unknown) => String(item).trim())
+              .filter(Boolean)
           : [];
         const loadedEvaluations = Array.isArray(raw.avaliacoes)
           ? raw.avaliacoes
@@ -506,34 +558,59 @@ export default function App() {
     }
   }
 
-  async function saveGeneralSettings(nextDisciplinas: string[], nextAvaliacoes: AvaliacaoConfig[], nextReferencias: string[] = referencias) {
-    await setDoc(doc(db, "configuracoes", "geral"), {
-      disciplinas: nextDisciplinas,
-      avaliacoes: nextAvaliacoes,
-      referencias: nextReferencias,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
+  async function saveGeneralSettings(
+    nextDisciplinas: string[],
+    nextAvaliacoes: AvaliacaoConfig[],
+    nextReferencias: string[] = referencias,
+  ) {
+    await setDoc(
+      doc(db, "configuracoes", "geral"),
+      {
+        disciplinas: nextDisciplinas,
+        avaliacoes: nextAvaliacoes,
+        referencias: nextReferencias,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
   }
 
   async function addDisciplina(nome: string) {
     const clean = nome.trim();
-    if (!clean) { setError("Informe o nome da disciplina."); return; }
-    if (disciplinas.some((item) => item.toLowerCase() === clean.toLowerCase())) {
-      setError("Essa disciplina já está cadastrada."); return;
+    if (!clean) {
+      setError("Informe o nome da disciplina.");
+      return;
     }
-    const next = [...disciplinas, clean].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    if (
+      disciplinas.some((item) => item.toLowerCase() === clean.toLowerCase())
+    ) {
+      setError("Essa disciplina já está cadastrada.");
+      return;
+    }
+    const next = [...disciplinas, clean].sort((a, b) =>
+      a.localeCompare(b, "pt-BR"),
+    );
     try {
       setError("");
       await saveGeneralSettings(next, avaliacoesConfig, referencias);
       setDisciplinas(next);
-    } catch (err) { console.error(err); setError("Não foi possível cadastrar a disciplina."); }
+    } catch (err) {
+      console.error(err);
+      setError("Não foi possível cadastrar a disciplina.");
+    }
   }
 
   async function addReferencia(referencia: string) {
     const clean = referencia.trim();
-    if (!clean) { setError("Informe a referência da coluna."); return; }
-    if (referencias.some((item) => item.toLowerCase() === clean.toLowerCase())) {
-      setError("Essa referência já está cadastrada."); return;
+    if (!clean) {
+      setError("Informe a referência da coluna.");
+      return;
+    }
+    if (
+      referencias.some((item) => item.toLowerCase() === clean.toLowerCase())
+    ) {
+      setError("Essa referência já está cadastrada.");
+      return;
     }
     const next = [...referencias, clean];
     try {
@@ -547,12 +624,21 @@ export default function App() {
   }
 
   async function removeReferencia(referencia: string) {
-    if (avaliacoesConfig.some((item) => item.referencia.toLowerCase() === referencia.toLowerCase())) {
-      setError("Não é possível excluir uma referência que já está vinculada a uma avaliação.");
+    if (
+      avaliacoesConfig.some(
+        (item) => item.referencia.toLowerCase() === referencia.toLowerCase(),
+      )
+    ) {
+      setError(
+        "Não é possível excluir uma referência que já está vinculada a uma avaliação.",
+      );
       return;
     }
     const next = referencias.filter((item) => item !== referencia);
-    if (!next.length) { setError("Mantenha pelo menos uma referência cadastrada."); return; }
+    if (!next.length) {
+      setError("Mantenha pelo menos uma referência cadastrada.");
+      return;
+    }
     try {
       await saveGeneralSettings(disciplinas, avaliacoesConfig, next);
       setReferencias(next);
@@ -570,36 +656,79 @@ export default function App() {
   ) {
     const cleanReferencia = referencia.trim();
     const cleanNome = nome.trim();
-    if (!cleanReferencia) { setError("Informe a referência da coluna."); return; }
-    if (!cleanNome) { setError("Informe o nome da avaliação."); return; }
-    if (!Number.isFinite(nota) || nota <= 0) { setError("Informe uma nota máxima válida."); return; }
-    if (!Number.isInteger(questoes) || questoes < 1) { setError("Informe uma quantidade válida de questões."); return; }
-    if (!referencias.some((item) => item.toLowerCase() === cleanReferencia.toLowerCase())) {
-      setError("Cadastre essa referência primeiro na seção Referências de colunas."); return;
+    if (!cleanReferencia) {
+      setError("Informe a referência da coluna.");
+      return;
     }
-    const next = [...avaliacoesConfig, { id: crypto.randomUUID(), referencia: cleanReferencia, nome: cleanNome, nota, questoes }];
+    if (!cleanNome) {
+      setError("Informe o nome da avaliação.");
+      return;
+    }
+    if (!Number.isFinite(nota) || nota <= 0) {
+      setError("Informe uma nota máxima válida.");
+      return;
+    }
+    if (!Number.isInteger(questoes) || questoes < 1) {
+      setError("Informe uma quantidade válida de questões.");
+      return;
+    }
+    if (
+      !referencias.some(
+        (item) => item.toLowerCase() === cleanReferencia.toLowerCase(),
+      )
+    ) {
+      setError(
+        "Cadastre essa referência primeiro na seção Referências de colunas.",
+      );
+      return;
+    }
+    const next = [
+      ...avaliacoesConfig,
+      {
+        id: crypto.randomUUID(),
+        referencia: cleanReferencia,
+        nome: cleanNome,
+        nota,
+        questoes,
+      },
+    ];
     try {
       setError("");
       await saveGeneralSettings(disciplinas, next, referencias);
       setAvaliacoesConfig(next);
       setAvaliacaoConfigId(next[next.length - 1].id);
       setNomeAtividade(cleanNome);
-    } catch (err) { console.error(err); setError("Não foi possível cadastrar a avaliação."); }
+    } catch (err) {
+      console.error(err);
+      setError("Não foi possível cadastrar a avaliação.");
+    }
   }
 
   async function removeDisciplina(nome: string) {
     const next = disciplinas.filter((item) => item !== nome);
-    try { await saveGeneralSettings(next, avaliacoesConfig, referencias); setDisciplinas(next); }
-    catch (err) { console.error(err); setError("Não foi possível excluir a disciplina."); }
+    try {
+      await saveGeneralSettings(next, avaliacoesConfig, referencias);
+      setDisciplinas(next);
+    } catch (err) {
+      console.error(err);
+      setError("Não foi possível excluir a disciplina.");
+    }
   }
 
   async function removeAvaliacaoConfig(id: string) {
     const next = avaliacoesConfig.filter((item) => item.id !== id);
-    if (!next.length) { setError("Mantenha pelo menos uma avaliação cadastrada."); return; }
-    try { await saveGeneralSettings(disciplinas, next, referencias); setAvaliacoesConfig(next); }
-    catch (err) { console.error(err); setError("Não foi possível excluir a avaliação."); }
+    if (!next.length) {
+      setError("Mantenha pelo menos uma avaliação cadastrada.");
+      return;
+    }
+    try {
+      await saveGeneralSettings(disciplinas, next, referencias);
+      setAvaliacoesConfig(next);
+    } catch (err) {
+      console.error(err);
+      setError("Não foi possível excluir a avaliação.");
+    }
   }
-
 
   // ====================================================
   // CADASTRAR TURMA
@@ -796,13 +925,26 @@ export default function App() {
 
   async function startEvaluation() {
     const turma = turmas.find((item) => item.id === turmaId);
-    const preset = avaliacoesConfig.find((item) => item.id === avaliacaoConfigId);
+    const preset = avaliacoesConfig.find(
+      (item) => item.id === avaliacaoConfigId,
+    );
     const questionCount = preset?.questoes || key.length;
     const configuredScore = preset?.nota ?? 10;
 
-    if (!preset) { setError("Selecione uma referência de avaliação válida nas configurações."); return; }
-    if (!turma) { setError("Selecione uma turma."); return; }
-    if (questionCount < 1) { setError("Informe uma quantidade válida de questões nas configurações."); return; }
+    if (!preset) {
+      setError(
+        "Selecione uma referência de avaliação válida nas configurações.",
+      );
+      return;
+    }
+    if (!turma) {
+      setError("Selecione uma turma.");
+      return;
+    }
+    if (questionCount < 1) {
+      setError("Informe uma quantidade válida de questões nas configurações.");
+      return;
+    }
 
     const finalKey = key.slice(0, questionCount);
     while (finalKey.length < questionCount) finalKey.push("A");
@@ -927,7 +1069,11 @@ export default function App() {
   }
 
   async function removeAvaliacao(avaliacao: Avaliacao) {
-    if (!window.confirm(`Deseja excluir a avaliação "${avaliacao.nomeAtividade || avaliacao.titulo}"? Os resultados dessa avaliação também serão excluídos.`)) {
+    if (
+      !window.confirm(
+        `Deseja excluir a avaliação "${avaliacao.nomeAtividade || avaliacao.titulo}"? Os resultados dessa avaliação também serão excluídos.`,
+      )
+    ) {
       return;
     }
 
@@ -964,7 +1110,6 @@ export default function App() {
     localStorage.setItem("corretor-avaliacao-config", avaliacaoConfigId);
   }, [avaliacaoConfigId]);
 
-
   useEffect(() => {
     localStorage.setItem("corretor-bimestre", bimestre);
   }, [bimestre]);
@@ -979,7 +1124,11 @@ export default function App() {
     disciplinaValue: string,
     bimestreValue: string,
   ) {
-    const keyId = `${student.id}_${disciplinaValue.trim().toLowerCase()}_${bimestreValue}`.replace(/\s+/g, "_");
+    const keyId =
+      `${student.id}_${disciplinaValue.trim().toLowerCase()}_${bimestreValue}`.replace(
+        /\s+/g,
+        "_",
+      );
 
     const timeOf = (value: any) =>
       value?.toMillis?.() ??
@@ -991,7 +1140,9 @@ export default function App() {
       const direct = (avaliacao.referencia ?? "").trim();
       if (direct) return direct.toLowerCase();
       const config = avaliacao.avaliacaoConfigId
-        ? avaliacoesConfig.find((item) => item.id === avaliacao.avaliacaoConfigId)
+        ? avaliacoesConfig.find(
+            (item) => item.id === avaliacao.avaliacaoConfigId,
+          )
         : undefined;
       return config?.referencia?.trim().toLowerCase() ?? "";
     };
@@ -1011,7 +1162,10 @@ export default function App() {
         const reference = referenceOf(avaliacao);
         if (!reference) return;
         const previous = latestEvaluationByReference.get(reference);
-        if (!previous || timeOf(avaliacao.createdAt) >= timeOf(previous.createdAt)) {
+        if (
+          !previous ||
+          timeOf(avaliacao.createdAt) >= timeOf(previous.createdAt)
+        ) {
           latestEvaluationByReference.set(reference, avaliacao);
         }
       });
@@ -1096,7 +1250,13 @@ export default function App() {
 
   function handleExport() {
     try {
-      exportResults(results, avaliacoes, students, `Resultados - ${bimestre}.xlsx`, Object.values(grades));
+      exportResults(
+        results,
+        avaliacoes,
+        students,
+        `Resultados - ${bimestre}.xlsx`,
+        Object.values(grades),
+      );
     } catch (err) {
       console.error(err);
 
@@ -1177,7 +1337,6 @@ export default function App() {
               label="Cadastrar notas"
               onClick={() => setPage("grades")}
             />
-
           </nav>
 
           <span
@@ -1198,7 +1357,10 @@ export default function App() {
             className="flex w-full items-center justify-between rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white shadow-sm"
           >
             <span>Menu</span>
-            <ChevronDown className={`transition-transform ${mobileMenuOpen ? "rotate-180" : ""}`} size={20} />
+            <ChevronDown
+              className={`transition-transform ${mobileMenuOpen ? "rotate-180" : ""}`}
+              size={20}
+            />
           </button>
           {mobileMenuOpen && (
             <div className="mt-2 grid grid-cols-2 gap-2 pb-1">
@@ -1673,7 +1835,12 @@ function ConfiguracoesPage({
   onAddReferencia: (referencia: string) => Promise<void>;
   onDeleteReferencia: (referencia: string) => Promise<void>;
   avaliacoesConfig: AvaliacaoConfig[];
-  onAddAvaliacao: (referencia: string, nome: string, nota: number, questoes: number) => Promise<void>;
+  onAddAvaliacao: (
+    referencia: string,
+    nome: string,
+    nota: number,
+    questoes: number,
+  ) => Promise<void>;
   onDeleteAvaliacao: (id: string) => Promise<void>;
 }) {
   const [turmaNome, setTurmaNome] = useState("");
@@ -1691,80 +1858,296 @@ function ConfiguracoesPage({
         <p className="text-sm font-bold text-blue-600">CONFIGURAÇÕES</p>
         <h2 className="mt-1 text-3xl font-black">Configurações do sistema</h2>
         <p className="mt-2 text-slate-500">
-          Cadastre aqui as turmas, disciplinas e modelos de avaliação que serão usados nas correções.
+          Cadastre aqui as turmas, disciplinas e modelos de avaliação que serão
+          usados nas correções.
         </p>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="rounded-3xl border bg-white p-6 shadow-sm">
           <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><GraduationCap /></span>
-            <div><h3 className="font-black">Turmas</h3><p className="text-xs text-slate-500">Adicione e organize suas turmas.</p></div>
+            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600">
+              <GraduationCap />
+            </span>
+            <div>
+              <h3 className="font-black">Turmas</h3>
+              <p className="text-xs text-slate-500">
+                Adicione e organize suas turmas.
+              </p>
+            </div>
           </div>
-          <form onSubmit={async (e) => { e.preventDefault(); await onAddTurma(turmaNome, turmaAno); setTurmaNome(""); }} className="mt-5 grid gap-3 sm:grid-cols-[1fr_130px]">
-            <input value={turmaNome} onChange={(e) => setTurmaNome(e.target.value)} className="rounded-2xl border px-4 py-3" placeholder="Ex.: 3º ano B" />
-            <input type="number" value={turmaAno} onChange={(e) => setTurmaAno(e.target.value)} className="rounded-2xl border px-4 py-3" />
-            <button disabled={savingTurma} className="sm:col-span-2 rounded-2xl bg-blue-600 py-3 font-black text-white disabled:opacity-50">{savingTurma ? "Salvando..." : "Adicionar turma"}</button>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              await onAddTurma(turmaNome, turmaAno);
+              setTurmaNome("");
+            }}
+            className="mt-5 grid gap-3 sm:grid-cols-[1fr_130px]"
+          >
+            <input
+              value={turmaNome}
+              onChange={(e) => setTurmaNome(e.target.value)}
+              className="rounded-2xl border px-4 py-3"
+              placeholder="Ex.: 3º ano B"
+            />
+            <input
+              type="number"
+              value={turmaAno}
+              onChange={(e) => setTurmaAno(e.target.value)}
+              className="rounded-2xl border px-4 py-3"
+            />
+            <button
+              disabled={savingTurma}
+              className="sm:col-span-2 rounded-2xl bg-blue-600 py-3 font-black text-white disabled:opacity-50"
+            >
+              {savingTurma ? "Salvando..." : "Adicionar turma"}
+            </button>
           </form>
           <div className="mt-5 space-y-2">
             {turmas.map((turma) => {
-              const count = students.filter((student) => student.turmaId === turma.id).length;
-              return <div key={turma.id} className="flex items-center justify-between rounded-2xl border p-3">
-                <div><p className="font-black">{turma.nome}</p><p className="text-xs text-slate-500">{turma.ano} • {count} aluno(s)</p></div>
-                <button onClick={() => void onDeleteTurma(turma)} disabled={deletingTurmaId === turma.id || count > 0} className="grid h-9 w-9 place-items-center rounded-xl text-red-500 disabled:opacity-30"><Trash2 size={17} /></button>
-              </div>;
+              const count = students.filter(
+                (student) => student.turmaId === turma.id,
+              ).length;
+              return (
+                <div
+                  key={turma.id}
+                  className="flex items-center justify-between rounded-2xl border p-3"
+                >
+                  <div>
+                    <p className="font-black">{turma.nome}</p>
+                    <p className="text-xs text-slate-500">
+                      {turma.ano} • {count} aluno(s)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void onDeleteTurma(turma)}
+                    disabled={deletingTurmaId === turma.id || count > 0}
+                    className="grid h-9 w-9 place-items-center rounded-xl text-red-500 disabled:opacity-30"
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </div>
+              );
             })}
-            {!turmas.length && <p className="rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-500">Nenhuma turma cadastrada.</p>}
+            {!turmas.length && (
+              <p className="rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-500">
+                Nenhuma turma cadastrada.
+              </p>
+            )}
           </div>
         </div>
 
         <div className="rounded-3xl border bg-white p-6 shadow-sm">
           <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><BookOpen /></span>
-            <div><h3 className="font-black">Disciplinas</h3><p className="text-xs text-slate-500">Essas opções aparecerão ao criar uma avaliação.</p></div>
+            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600">
+              <BookOpen />
+            </span>
+            <div>
+              <h3 className="font-black">Disciplinas</h3>
+              <p className="text-xs text-slate-500">
+                Essas opções aparecerão ao criar uma avaliação.
+              </p>
+            </div>
           </div>
-          <form onSubmit={async (e) => { e.preventDefault(); await onAddDisciplina(disciplinaNome); setDisciplinaNome(""); }} className="mt-5 flex gap-2">
-            <input value={disciplinaNome} onChange={(e) => setDisciplinaNome(e.target.value)} className="min-w-0 flex-1 rounded-2xl border px-4 py-3" placeholder="Ex.: Matemática" />
-            <button className="rounded-2xl bg-blue-600 px-5 font-black text-white">Adicionar</button>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              await onAddDisciplina(disciplinaNome);
+              setDisciplinaNome("");
+            }}
+            className="mt-5 flex gap-2"
+          >
+            <input
+              value={disciplinaNome}
+              onChange={(e) => setDisciplinaNome(e.target.value)}
+              className="min-w-0 flex-1 rounded-2xl border px-4 py-3"
+              placeholder="Ex.: Matemática"
+            />
+            <button className="rounded-2xl bg-blue-600 px-5 font-black text-white">
+              Adicionar
+            </button>
           </form>
           <div className="mt-5 flex flex-wrap gap-2">
-            {disciplinas.map((item) => <div key={item} className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold"><span>{item}</span><button onClick={() => void onDeleteDisciplina(item)} className="text-red-500"><X size={15} /></button></div>)}
+            {disciplinas.map((item) => (
+              <div
+                key={item}
+                className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold"
+              >
+                <span>{item}</span>
+                <button
+                  onClick={() => void onDeleteDisciplina(item)}
+                  className="text-red-500"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
           </div>
         </div>
 
         <div className="rounded-3xl border bg-white p-6 shadow-sm lg:col-span-2">
           <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><Tag /></span>
-            <div><h3 className="font-black">Referências de colunas</h3><p className="text-xs text-slate-500">Cadastre aqui as referências fixas que poderão ser usadas nas avaliações.</p></div>
+            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600">
+              <Tag />
+            </span>
+            <div>
+              <h3 className="font-black">Referências de colunas</h3>
+              <p className="text-xs text-slate-500">
+                Cadastre aqui as referências fixas que poderão ser usadas nas
+                avaliações.
+              </p>
+            </div>
           </div>
           <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
-            <b>Referência:</b> será o nome fixo da coluna na planilha de resultados. Recomenda-se usar exatamente a nomenclatura adotada pela Secretaria de Educação, por exemplo <b>Atv1</b>, <b>Atv2</b> e <b>Atv3</b>. Depois de cadastrada aqui, a referência será apenas selecionada ao criar uma avaliação.
+            <b>Referência:</b> será o nome fixo da coluna na planilha de
+            resultados. Recomenda-se usar exatamente a nomenclatura adotada pela
+            Secretaria de Educação, por exemplo <b>Atv1</b>, <b>Atv2</b> e{" "}
+            <b>Atv3</b>. Depois de cadastrada aqui, a referência será apenas
+            selecionada ao criar uma avaliação.
           </div>
-          <form onSubmit={async (e) => { e.preventDefault(); await onAddReferencia(referenciaNome); setReferenciaNome(""); }} className="mt-5 flex gap-2">
-            <input value={referenciaNome} onChange={(e) => setReferenciaNome(e.target.value)} className="min-w-0 flex-1 rounded-2xl border px-4 py-3" placeholder="Ex.: Atv4" />
-            <button className="rounded-2xl bg-blue-600 px-5 py-3 font-black text-white">Adicionar</button>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              await onAddReferencia(referenciaNome);
+              setReferenciaNome("");
+            }}
+            className="mt-5 flex gap-2"
+          >
+            <input
+              value={referenciaNome}
+              onChange={(e) => setReferenciaNome(e.target.value)}
+              className="min-w-0 flex-1 rounded-2xl border px-4 py-3"
+              placeholder="Ex.: Atv4"
+            />
+            <button className="rounded-2xl bg-blue-600 px-5 py-3 font-black text-white">
+              Adicionar
+            </button>
           </form>
           <div className="mt-5 flex flex-wrap gap-2">
-            {referencias.map((item) => <div key={item} className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold"><span>{item}</span><button onClick={() => void onDeleteReferencia(item)} className="text-red-500" title="Excluir referência"><X size={15} /></button></div>)}
+            {referencias.map((item) => (
+              <div
+                key={item}
+                className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold"
+              >
+                <span>{item}</span>
+                <button
+                  onClick={() => void onDeleteReferencia(item)}
+                  className="text-red-500"
+                  title="Excluir referência"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
           </div>
         </div>
 
         <div className="rounded-3xl border bg-white p-6 shadow-sm lg:col-span-2">
           <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><FileText /></span>
-            <div><h3 className="font-black">Avaliações e referências</h3><p className="text-xs text-slate-500">Cadastre o nome da avaliação, a nota máxima e a quantidade de questões vinculados a uma referência.</p></div>
+            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600">
+              <FileText />
+            </span>
+            <div>
+              <h3 className="font-black">Avaliações e referências</h3>
+              <p className="text-xs text-slate-500">
+                Cadastre o nome da avaliação, a nota máxima e a quantidade de
+                questões vinculados a uma referência.
+              </p>
+            </div>
           </div>
-          <form onSubmit={async (e) => { e.preventDefault(); await onAddAvaliacao(avaliacaoReferencia, avaliacaoNome, Number(avaliacaoNota), Number(avaliacaoQuestoes)); setAvaliacaoNome(""); }} className="mt-5 grid gap-4 rounded-2xl bg-slate-50 p-4 md:grid-cols-[180px_1fr_150px_210px_auto]">
-            <label className="block"><span className="mb-2 block text-sm font-bold">Referência</span><select value={avaliacaoReferencia} onChange={(e) => { const value = e.target.value; setAvaliacaoReferencia(value); }} className="w-full rounded-2xl border bg-white px-4 py-3"><option value="">Selecione</option>{referencias.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <label className="block"><span className="mb-2 block text-sm font-bold">Nome da avaliação</span><input value={avaliacaoNome} onChange={(e) => setAvaliacaoNome(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3" placeholder="Ex.: Prova" /></label>
-            <label className="block"><span className="mb-2 block text-sm font-bold">Nota máxima</span><input type="number" min="0.1" step="0.1" value={avaliacaoNota} onChange={(e) => setAvaliacaoNota(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3" placeholder="10" /></label>
-            <label className="block"><span className="mb-2 block text-sm font-bold">Quantidade de questões</span><input type="number" min="1" step="1" value={avaliacaoQuestoes} onChange={(e) => setAvaliacaoQuestoes(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3" placeholder="10" /></label>
-            <button className="self-end rounded-2xl bg-blue-600 px-5 py-3 font-black text-white">Adicionar</button>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              await onAddAvaliacao(
+                avaliacaoReferencia,
+                avaliacaoNome,
+                Number(avaliacaoNota),
+                Number(avaliacaoQuestoes),
+              );
+              setAvaliacaoNome("");
+            }}
+            className="mt-5 grid gap-4 rounded-2xl bg-slate-50 p-4 md:grid-cols-[180px_1fr_150px_210px_auto]"
+          >
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold">Referência</span>
+              <select
+                value={avaliacaoReferencia}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setAvaliacaoReferencia(value);
+                }}
+                className="w-full rounded-2xl border bg-white px-4 py-3"
+              >
+                <option value="">Selecione</option>
+                {referencias.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold">
+                Nome da avaliação
+              </span>
+              <input
+                value={avaliacaoNome}
+                onChange={(e) => setAvaliacaoNome(e.target.value)}
+                className="w-full rounded-2xl border bg-white px-4 py-3"
+                placeholder="Ex.: Prova"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold">Nota máxima</span>
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={avaliacaoNota}
+                onChange={(e) => setAvaliacaoNota(e.target.value)}
+                className="w-full rounded-2xl border bg-white px-4 py-3"
+                placeholder="10"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold">
+                Quantidade de questões
+              </span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={avaliacaoQuestoes}
+                onChange={(e) => setAvaliacaoQuestoes(e.target.value)}
+                className="w-full rounded-2xl border bg-white px-4 py-3"
+                placeholder="10"
+              />
+            </label>
+            <button className="self-end rounded-2xl bg-blue-600 px-5 py-3 font-black text-white">
+              Adicionar
+            </button>
           </form>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {avaliacoesConfig.map((item) => (
               <div key={item.id} className="rounded-2xl border p-4">
-                <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase text-blue-600">{item.referencia}</p><p className="font-black">{item.nome}</p><p className="mt-1 text-sm text-slate-500">Nota máxima: {item.nota} • {item.questoes} questões</p></div><button onClick={() => void onDeleteAvaliacao(item.id)} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-red-500 hover:bg-red-50" title="Excluir avaliação"><Trash2 size={17} /></button></div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase text-blue-600">
+                      {item.referencia}
+                    </p>
+                    <p className="font-black">{item.nome}</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Nota máxima: {item.nota} • {item.questoes} questões
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void onDeleteAvaliacao(item.id)}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-red-500 hover:bg-red-50"
+                    title="Excluir avaliação"
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -1912,7 +2295,7 @@ function Students({
               </p>
             </div>
 
-            <div className="flex gap-2 sm:w-[420px]">
+            <div className="flex gap-2 sm:w-105">
               <select
                 value={selectedTurmaId}
                 onChange={(event) => setSelectedTurmaId(event.target.value)}
@@ -2039,7 +2422,10 @@ function AvaliacoesPage({
           Clique em uma avaliação para visualizar as respostas de cada aluno.
         </p>
       </div>
-      <button onClick={onExport} className="mb-5 inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white">
+      <button
+        onClick={onExport}
+        className="mb-5 inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white"
+      >
         <FileSpreadsheet size={18} /> Exportar planilha
       </button>
       {message && (
@@ -2070,19 +2456,31 @@ function AvaliacoesPage({
                 </div>
                 <div className="flex flex-wrap justify-end gap-2">
                   <button
-                    onClick={() => setExpandedId((current) => current === item.id ? null : item.id)}
+                    onClick={() =>
+                      setExpandedId((current) =>
+                        current === item.id ? null : item.id,
+                      )
+                    }
                     className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-bold text-white"
                   >
-                    {expandedId === item.id ? "Ocultar resultados" : "Ver resultados"}
+                    {expandedId === item.id
+                      ? "Ocultar resultados"
+                      : "Ver resultados"}
                   </button>
                   <button
-                    onClick={() => setEditing({ ...item, gabarito: [...item.gabarito] })}
+                    onClick={() =>
+                      setEditing({ ...item, gabarito: [...item.gabarito] })
+                    }
                     className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700"
-                  >Editar gabarito</button>
+                  >
+                    Editar gabarito
+                  </button>
                   <button
                     onClick={() => onDelete(item)}
                     className="rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-700"
-                  >Excluir avaliação</button>
+                  >
+                    Excluir avaliação
+                  </button>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -2097,40 +2495,48 @@ function AvaliacoesPage({
               </div>
               {expandedId === item.id && (
                 <div className="mt-5 overflow-hidden rounded-2xl border">
-                  <div className="bg-slate-100 px-4 py-3 text-sm font-black">Respostas dos alunos</div>
-                  {students.filter((student) => student.turmaId === item.turmaId).map((student) => {
-                    const result = results.find((r) => r.avaliacaoId === item.id && r.studentId === student.id);
-                    return (
-                      <div key={student.id} className="border-t px-4 py-4">
-                        <div className="flex flex-col justify-between gap-2 md:flex-row md:items-center">
-                          <div>
-                            <b>{student.nome}</b>
+                  <div className="bg-slate-100 px-4 py-3 text-sm font-black">
+                    Respostas dos alunos
+                  </div>
+                  {students
+                    .filter((student) => student.turmaId === item.turmaId)
+                    .map((student) => {
+                      const result = results.find(
+                        (r) =>
+                          r.avaliacaoId === item.id &&
+                          r.studentId === student.id,
+                      );
+                      return (
+                        <div key={student.id} className="border-t px-4 py-4">
+                          <div className="flex flex-col justify-between gap-2 md:flex-row md:items-center">
+                            <div>
+                              <b>{student.nome}</b>
 
-                            <div className="text-xs text-slate-500">
-                              {result
-                                ? `${result.hits}/${result.total} acertos • Nota ${Number(result.score).toFixed(1)}`
-                                : "Ainda não corrigida"}
+                              <div className="text-xs text-slate-500">
+                                {result
+                                  ? `${result.hits}/${result.total} acertos • Nota ${Number(result.score).toFixed(1)}`
+                                  : "Ainda não corrigida"}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1">
+                              {(result?.answers || []).map((answer, index) => (
+                                <span
+                                  key={index}
+                                  className={`rounded-md px-2 py-1 text-xs font-black ${
+                                    answer === item.gabarito[index]
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-red-100 text-red-700"
+                                  }`}
+                                >
+                                  {index + 1}:{answer}
+                                </span>
+                              ))}
                             </div>
                           </div>
-
-                          <div className="flex flex-wrap gap-1">
-                            {(result?.answers || []).map((answer, index) => (
-                              <span
-                                key={index}
-                                className={`rounded-md px-2 py-1 text-xs font-black ${
-                                  answer === item.gabarito[index]
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : "bg-red-100 text-red-700"
-                                }`}
-                              >
-                                {index + 1}:{answer}
-                              </span>
-                            ))}
-                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               )}
             </div>
@@ -2317,25 +2723,180 @@ function ReviewPage({
 // ======================================================
 
 function Setup({
-  avaliacaoConfigId, setAvaliacaoConfigId, avaliacaoOptions, bimestre, setBimestre, disciplina, setDisciplina, disciplinas, turmaId, setTurmaId, turmas, keyAnswers, updateKey, onNext, saving,
+  avaliacaoConfigId,
+  setAvaliacaoConfigId,
+  avaliacaoOptions,
+  bimestre,
+  setBimestre,
+  disciplina,
+  setDisciplina,
+  disciplinas,
+  turmaId,
+  setTurmaId,
+  turmas,
+  keyAnswers,
+  updateKey,
+  onNext,
+  saving,
 }: {
-  avaliacaoConfigId: string; setAvaliacaoConfigId: (value: string) => void; avaliacaoOptions: AvaliacaoConfig[]; bimestre: string; setBimestre: (value: string) => void; disciplina: string; setDisciplina: (value: string) => void; disciplinas: string[]; turmaId: string; setTurmaId: (value: string) => void; turmas: Turma[]; keyAnswers: Answer[]; updateKey: (index: number, value: Answer) => void; onNext: () => void; saving: boolean;
+  avaliacaoConfigId: string;
+  setAvaliacaoConfigId: (value: string) => void;
+  avaliacaoOptions: AvaliacaoConfig[];
+  bimestre: string;
+  setBimestre: (value: string) => void;
+  disciplina: string;
+  setDisciplina: (value: string) => void;
+  disciplinas: string[];
+  turmaId: string;
+  setTurmaId: (value: string) => void;
+  turmas: Turma[];
+  keyAnswers: Answer[];
+  updateKey: (index: number, value: Answer) => void;
+  onNext: () => void;
+  saving: boolean;
 }) {
-  const selected = avaliacaoOptions.find((item) => item.id === avaliacaoConfigId) ?? avaliacaoOptions[0];
+  const selected =
+    avaliacaoOptions.find((item) => item.id === avaliacaoConfigId) ??
+    avaliacaoOptions[0];
   return (
-    <section className="mx-auto max-w-4xl"><div className="mb-6"><p className="text-sm font-bold text-blue-600">NOVA AVALIAÇÃO</p><h2 className="mt-1 text-3xl font-black">Preparar avaliação</h2><p className="mt-2 text-slate-500">Selecione o nome da avaliação cadastrado nas configurações e informe o gabarito oficial.</p></div>
+    <section className="mx-auto max-w-4xl">
+      <div className="mb-6">
+        <p className="text-sm font-bold text-blue-600">NOVA AVALIAÇÃO</p>
+        <h2 className="mt-1 text-3xl font-black">Preparar avaliação</h2>
+        <p className="mt-2 text-slate-500">
+          Selecione o nome da avaliação cadastrado nas configurações e informe o
+          gabarito oficial.
+        </p>
+      </div>
       <div className="space-y-5 rounded-3xl border bg-white p-5 shadow-sm md:p-7">
         <div className="grid gap-4 md:grid-cols-3">
-          <label><span className="mb-2 block text-sm font-bold">Nome da avaliação</span><select value={selected?.id ?? ""} onChange={(e) => setAvaliacaoConfigId(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3 font-bold">{avaliacaoOptions.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select><span className="mt-1 block text-xs text-slate-500">Selecione o nome da avaliação cadastrado nas configurações.</span></label>
-          <label><span className="mb-2 block text-sm font-bold">Referência</span><input readOnly value={selected?.referencia ?? "—"} className="w-full cursor-not-allowed rounded-2xl border bg-slate-100 px-4 py-3 font-bold" /><span className="mt-1 block text-xs text-slate-500">Referência fixa da coluna na planilha. Ela não pode ser alterada nesta tela.</span></label>
-          <label><span className="mb-2 block text-sm font-bold">Nota máxima</span><input readOnly value={selected?.nota ?? "—"} className="w-full cursor-not-allowed rounded-2xl border bg-slate-100 px-4 py-3 font-bold" /></label>
-          <label><span className="mb-2 block text-sm font-bold">Disciplina</span><select value={disciplina} onChange={(e) => setDisciplina(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3">{disciplinas.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          <label><span className="mb-2 block text-sm font-bold">Bimestre</span><select value={bimestre} onChange={(e) => setBimestre(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3"><option>1º Bimestre</option><option>2º Bimestre</option><option>3º Bimestre</option><option>4º Bimestre</option></select></label>
-          <label><span className="mb-2 block text-sm font-bold">Turma</span><select value={turmaId} onChange={(e) => setTurmaId(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3"><option value="">Selecione uma turma</option>{turmas.map((turma) => <option key={turma.id} value={turma.id}>{turma.nome} — {turma.ano}</option>)}</select></label>
+          <label>
+            <span className="mb-2 block text-sm font-bold">
+              Nome da avaliação
+            </span>
+            <select
+              value={selected?.id ?? ""}
+              onChange={(e) => setAvaliacaoConfigId(e.target.value)}
+              className="w-full rounded-2xl border bg-white px-4 py-3 font-bold"
+            >
+              {avaliacaoOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nome}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">
+              Selecione o nome da avaliação cadastrado nas configurações.
+            </span>
+          </label>
+          <label>
+            <span className="mb-2 block text-sm font-bold">Referência</span>
+            <input
+              readOnly
+              value={selected?.referencia ?? "—"}
+              className="w-full cursor-not-allowed rounded-2xl border bg-slate-100 px-4 py-3 font-bold"
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              Referência fixa da coluna na planilha. Ela não pode ser alterada
+              nesta tela.
+            </span>
+          </label>
+          <label>
+            <span className="mb-2 block text-sm font-bold">Nota máxima</span>
+            <input
+              readOnly
+              value={selected?.nota ?? "—"}
+              className="w-full cursor-not-allowed rounded-2xl border bg-slate-100 px-4 py-3 font-bold"
+            />
+          </label>
+          <label>
+            <span className="mb-2 block text-sm font-bold">Disciplina</span>
+            <select
+              value={disciplina}
+              onChange={(e) => setDisciplina(e.target.value)}
+              className="w-full rounded-2xl border bg-white px-4 py-3"
+            >
+              {disciplinas.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="mb-2 block text-sm font-bold">Bimestre</span>
+            <select
+              value={bimestre}
+              onChange={(e) => setBimestre(e.target.value)}
+              className="w-full rounded-2xl border bg-white px-4 py-3"
+            >
+              <option>1º Bimestre</option>
+              <option>2º Bimestre</option>
+              <option>3º Bimestre</option>
+              <option>4º Bimestre</option>
+            </select>
+          </label>
+          <label>
+            <span className="mb-2 block text-sm font-bold">Turma</span>
+            <select
+              value={turmaId}
+              onChange={(e) => setTurmaId(e.target.value)}
+              className="w-full rounded-2xl border bg-white px-4 py-3"
+            >
+              <option value="">Selecione uma turma</option>
+              {turmas.map((turma) => (
+                <option key={turma.id} value={turma.id}>
+                  {turma.nome} — {turma.ano}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-        {turmas.length === 0 && <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">Cadastre uma turma antes de criar uma avaliação.</div>}
-        <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-bold">Gabarito oficial</span><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{selected?.questoes ?? keyAnswers.length} questões</span></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-5">{keyAnswers.slice(0, selected?.questoes ?? keyAnswers.length).map((answer,index)=><div key={index} className="rounded-2xl border bg-slate-50 p-3"><span className="text-sm font-black">{String(index+1).padStart(2,"0")}</span><select value={answer} onChange={(e)=>updateKey(index,e.target.value as Answer)} className="mt-2 w-full rounded-xl border bg-white px-2 py-2 font-bold">{alternatives.map((a)=><option key={a} value={a}>{a}</option>)}</select></div>)}</div></div>
-        <button disabled={saving || !turmas.length || !selected} onClick={onNext} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 font-black text-white disabled:opacity-50">{saving ? "Salvando avaliação..." : "Salvar avaliação e selecionar aluno"}<ChevronRight size={18}/></button>
+        {turmas.length === 0 && (
+          <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">
+            Cadastre uma turma antes de criar uma avaliação.
+          </div>
+        )}
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-bold">Gabarito oficial</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">
+              {selected?.questoes ?? keyAnswers.length} questões
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {keyAnswers
+              .slice(0, selected?.questoes ?? keyAnswers.length)
+              .map((answer, index) => (
+                <div key={index} className="rounded-2xl border bg-slate-50 p-3">
+                  <span className="text-sm font-black">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <select
+                    value={answer}
+                    onChange={(e) => updateKey(index, e.target.value as Answer)}
+                    className="mt-2 w-full rounded-xl border bg-white px-2 py-2 font-bold"
+                  >
+                    {alternatives.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+          </div>
+        </div>
+        <button
+          disabled={saving || !turmas.length || !selected}
+          onClick={onNext}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 font-black text-white disabled:opacity-50"
+        >
+          {saving
+            ? "Salvando avaliação..."
+            : "Salvar avaliação e selecionar aluno"}
+          <ChevronRight size={18} />
+        </button>
       </div>
     </section>
   );
@@ -2403,7 +2964,7 @@ function ScanPage({
             <Users className="text-blue-600" size={20} />
           </div>
 
-          <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto">
+          <div className="mt-4 max-h-105 space-y-2 overflow-y-auto">
             {students.length === 0 ? (
               <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">
                 Não há alunos cadastrados nessa turma.
@@ -2531,9 +3092,7 @@ function GradesPage({
   // Isso evita que o useEffect que carrega os valores salvos seja executado
   // novamente a cada tecla digitada e apague o valor que está sendo editado.
   const turmaStudents = useMemo(
-    () => students.filter(
-      (student) => !turmaId || student.turmaId === turmaId,
-    ),
+    () => students.filter((student) => !turmaId || student.turmaId === turmaId),
     [students, turmaId],
   );
 
@@ -2640,7 +3199,10 @@ function GradesPage({
         .forEach((result) => {
           const key = `${result.studentId}__${referenceKey}`;
           const previous = map.get(key);
-          if (!previous || timeOf(result.createdAt) >= timeOf(previous.createdAt)) {
+          if (
+            !previous ||
+            timeOf(result.createdAt) >= timeOf(previous.createdAt)
+          ) {
             map.set(key, result);
           }
         });
@@ -2724,11 +3286,7 @@ function GradesPage({
     latestConfigByReference,
   ]);
 
-  const setValue = (
-    studentId: string,
-    referencia: string,
-    value: string,
-  ) => {
+  const setValue = (studentId: string, referencia: string, value: string) => {
     setDrafts((current) => ({
       ...current,
       [studentId]: {
@@ -2824,7 +3382,7 @@ function GradesPage({
       </div>
 
       <div className="overflow-x-auto rounded-3xl border bg-white shadow-sm">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-225 text-sm">
           <thead className="bg-slate-100">
             <tr>
               <th className="px-4 py-3 text-left">Aluno</th>
@@ -2833,7 +3391,8 @@ function GradesPage({
                 const key = referencia.toLowerCase();
                 const latest = latestEvaluationByReference.get(key);
                 const fallbackConfig = latestConfigByReference.get(key);
-                const headerName = latest?.nomeAtividade ?? fallbackConfig?.nome;
+                const headerName =
+                  latest?.nomeAtividade ?? fallbackConfig?.nome;
                 const maxNote = latest?.notaMaxima ?? fallbackConfig?.nota;
 
                 return (
@@ -2916,8 +3475,6 @@ function GradesPage({
                   <td className="px-4 py-4 text-center font-black text-blue-600">
                     {media}
                   </td>
-
-
                 </tr>
               );
             })}
