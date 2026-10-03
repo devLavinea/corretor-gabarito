@@ -581,8 +581,16 @@ function measureBubble(
   center: Point,
   radius: number,
 ): BubbleMeasurement {
-  const outer = radius * 2.05;
-  const size = Math.max(24, Math.ceil(outer * 2 + 8));
+  /*
+   * LEITURA ROBUSTA:
+   * - o círculo impresso é ignorado sempre que possível;
+   * - a região central da bolha tem peso maior;
+   * - a iluminação é comparada com um anel imediatamente ao redor;
+   * - preto e azul são aceitos;
+   * - várias regiões da bolha são medidas para não depender de um único ponto.
+   */
+  const outer = radius * 2.2;
+  const size = Math.max(28, Math.ceil(outer * 2 + 10));
   const x = Math.round(center.x - size / 2);
   const y = Math.round(center.y - size / 2);
 
@@ -607,171 +615,127 @@ function measureBubble(
   }
 
   const image = ctx.getImageData(x, y, size, size);
-  const centerPoint = size / 2;
-  const backgroundGray: number[] = [];
-  const backgroundBlue: number[] = [];
-  const inside: {
-    gray: number;
-    blue: number;
-    ratio: number;
-    angle: number;
-  }[] = [];
+  const c = size / 2;
+
+  const ringGray: number[] = [];
+  const ringBlue: number[] = [];
+  const core: { gray: number; blue: number; r: number; angle: number }[] = [];
+  const body: { gray: number; blue: number; r: number; angle: number }[] = [];
 
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
-      const dx = px + 0.5 - centerPoint;
-      const dy = py + 0.5 - centerPoint;
-      const ratio = Math.hypot(dx, dy) / radius;
+      const dx = px + 0.5 - c;
+      const dy = py + 0.5 - c;
+      const r = Math.hypot(dx, dy) / radius;
+
+      if (r > 2.0) continue;
+
       const index = (py * size + px) * 4;
-      const r = image.data[index];
-      const g = image.data[index + 1];
-      const b = image.data[index + 2];
+      const red = image.data[index];
+      const green = image.data[index + 1];
+      const blueChannel = image.data[index + 2];
       const gray = getGray(image.data, index);
-      const blue = getBlueInk(r, g, b);
+      const blue = getBlueInk(red, green, blueChannel);
+      const angle = Math.atan2(dy, dx);
 
-      if (ratio >= 1.48 && ratio <= 1.88) {
-        backgroundGray.push(gray);
-        backgroundBlue.push(blue);
+      // O anel externo é uma referência da iluminação local.
+      // Ele fica fora da linha impressa da bolha.
+      if (r >= 1.45 && r <= 1.95) {
+        ringGray.push(gray);
+        ringBlue.push(blue);
       }
 
-      if (ratio <= 1.02) {
-        inside.push({
-          gray,
-          blue,
-          ratio,
-          angle: Math.atan2(dy, dx),
-        });
+      // O núcleo evita a borda impressa da bolha.
+      if (r <= 0.58) {
+        core.push({ gray, blue, r, angle });
+      } else if (r <= 0.92) {
+        body.push({ gray, blue, r, angle });
       }
     }
   }
 
-  const backgroundMean = median(backgroundGray);
-  const backgroundBlueMean = median(backgroundBlue);
-  const denominator = Math.max(35, backgroundMean);
+  const backgroundMean = median(ringGray);
+  const backgroundBlueMean = median(ringBlue);
+  const denominator = Math.max(30, backgroundMean);
 
-  const scoreAtRadius = (maxRatio: number) => {
-    const values = inside.filter((sample) => sample.ratio <= maxRatio);
-    if (!values.length) return 0;
+  if (!core.length || !body.length) return empty;
 
-    const grays = values.map((sample) => sample.gray);
-    const blues = values.map((sample) => sample.blue);
-    const sortedGray = [...grays].sort((a, b) => a - b);
-
-    const p20 = sortedGray[Math.floor((sortedGray.length - 1) * 0.2)];
-    const p35 = sortedGray[Math.floor((sortedGray.length - 1) * 0.35)];
-    const mean = grays.reduce((sum, value) => sum + value, 0) / grays.length;
-    const blueMean =
-      blues.reduce((sum, value) => sum + value, 0) / blues.length;
-
-    const grayContrast20 = clamp01((backgroundMean - p20) / denominator);
-    const grayContrast35 = clamp01((backgroundMean - p35) / denominator);
-    const grayMeanContrast = clamp01(
-      (backgroundMean - mean) / Math.max(35, backgroundMean),
-    );
-
-    const blueContrast = clamp01((blueMean - backgroundBlueMean) / 0.2);
-
-    const darkThreshold = backgroundMean - Math.max(6, backgroundMean * 0.065);
-    const darkRatio =
-      grays.filter((value) => value <= darkThreshold).length / grays.length;
-
-    // Preto: luminância/contraste. Azul: dominância do canal azul.
-    return clamp01(
-      grayContrast20 * 0.28 +
-        grayContrast35 * 0.14 +
-        grayMeanContrast * 0.12 +
-        darkRatio * 0.16 +
-        blueContrast * 0.3,
-    );
-  };
-
-  const smallScore = scoreAtRadius(0.48);
-  const coreScore = scoreAtRadius(0.68);
-  const bodyScore = scoreAtRadius(0.88);
-  const fullScore = scoreAtRadius(1.02);
-
-  const sectorScores: number[] = [];
-  for (let sector = 0; sector < 8; sector++) {
-    const values = inside.filter((sample) => {
-      const normalized = (sample.angle + Math.PI * 2) % (Math.PI * 2);
-      const index = Math.floor((normalized / (Math.PI * 2)) * 8) % 8;
-      return index === sector && sample.ratio <= 0.96;
-    });
-
-    if (!values.length) {
-      sectorScores.push(0);
-      continue;
-    }
-
-    const grayMean =
-      values.reduce((sum, sample) => sum + sample.gray, 0) / values.length;
-    const blueMean =
-      values.reduce((sum, sample) => sum + sample.blue, 0) / values.length;
-
-    const grayEvidence = clamp01(
-      (backgroundMean - grayMean) / Math.max(35, backgroundMean),
-    );
-    const blueEvidence = clamp01((blueMean - backgroundBlueMean) / 0.2);
-
-    sectorScores.push(grayEvidence * 0.55 + blueEvidence * 0.45);
-  }
-
-  const strongestSectors = [...sectorScores].sort((a, b) => b - a).slice(0, 3);
-  const sectorEvidence = strongestSectors.length
-    ? strongestSectors.reduce((sum, value) => sum + value, 0) /
-      strongestSectors.length
-    : 0;
-
-  const coreValues = inside.filter((sample) => sample.ratio <= 0.58);
-  const bodyValues = inside.filter(
-    (sample) => sample.ratio > 0.58 && sample.ratio <= 0.88,
-  );
-
-  const coreMean = median(coreValues.map((sample) => sample.gray));
-  const bodyMean = median(bodyValues.map((sample) => sample.gray));
+  const coreMean = median(core.map((p) => p.gray));
+  const bodyMean = median(body.map((p) => p.gray));
 
   const coreContrast = clamp01((backgroundMean - coreMean) / denominator);
   const bodyContrast = clamp01((backgroundMean - bodyMean) / denominator);
 
-  const adaptiveThreshold = backgroundMean - Math.max(7, backgroundMean * 0.07);
-  const darkRatio = coreValues.length
-    ? coreValues.filter((sample) => sample.gray <= adaptiveThreshold).length /
-      coreValues.length
-    : 0;
+  // Detecta tinta escura de forma relativa à iluminação local.
+  const darkThreshold = backgroundMean - Math.max(8, backgroundMean * 0.075);
+  const darkRatio =
+    core.filter((p) => p.gray <= darkThreshold).length / core.length;
 
-  const coreBlueMean = coreValues.length
-    ? coreValues.reduce((sum, sample) => sum + sample.blue, 0) /
-      coreValues.length
-    : 0;
-  const bodyBlueMean = bodyValues.length
-    ? bodyValues.reduce((sum, sample) => sum + sample.blue, 0) /
-      bodyValues.length
-    : 0;
+  const coreBlue = core.reduce((sum, p) => sum + p.blue, 0) / core.length;
+  const bodyBlue = body.reduce((sum, p) => sum + p.blue, 0) / body.length;
 
   const colorInk = clamp01(
-    ((coreBlueMean - backgroundBlueMean) / 0.2) * 0.7 +
-      ((bodyBlueMean - backgroundBlueMean) / 0.2) * 0.3,
+    ((coreBlue - backgroundBlueMean) / 0.16) * 0.72 +
+      ((bodyBlue - backgroundBlueMean) / 0.16) * 0.28,
   );
 
   const blackInk = clamp01(
-    coreContrast * 0.45 + bodyContrast * 0.25 + darkRatio * 0.3,
+    coreContrast * 0.48 + bodyContrast * 0.27 + darkRatio * 0.25,
   );
 
-  const multiScale =
-    smallScore * 0.12 +
-    coreScore * 0.28 +
-    bodyScore * 0.22 +
-    fullScore * 0.16 +
-    sectorEvidence * 0.22;
+  /*
+   * Uma marca real normalmente ocupa uma parte relevante do núcleo.
+   * Medir por setores reduz o risco de confundir sombra/reflexo localizado
+   * com uma bolha preenchida.
+   */
+  const sectors: number[] = [];
 
-  // A decisão final é feita pelos dois sinais de tinta:
-  // - preto/cinza
-  // - azul/colorido
-  // Assim uma caneta preta continua funcionando mesmo sem sinal azul,
-  // e uma caneta azul não precisa ser extremamente escura.
-  const inkEvidence = clamp01(blackInk * 0.55 + colorInk * 0.45);
+  for (let sector = 0; sector < 12; sector++) {
+    const start = (sector / 12) * Math.PI * 2;
+    const end = ((sector + 1) / 12) * Math.PI * 2;
 
-  const score = clamp01(multiScale * 0.64 + inkEvidence * 0.36);
+    const values = core.filter((p) => {
+      const a = (p.angle + Math.PI * 2) % (Math.PI * 2);
+      return a >= start && a < end;
+    });
+
+    if (!values.length) {
+      sectors.push(0);
+      continue;
+    }
+
+    const meanGray = values.reduce((sum, p) => sum + p.gray, 0) / values.length;
+    const meanBlue = values.reduce((sum, p) => sum + p.blue, 0) / values.length;
+
+    const grayEvidence = clamp01(
+      (backgroundMean - meanGray) / Math.max(30, backgroundMean),
+    );
+    const blueEvidence = clamp01((meanBlue - backgroundBlueMean) / 0.16);
+
+    sectors.push(grayEvidence * 0.62 + blueEvidence * 0.38);
+  }
+
+  const sortedSectors = [...sectors].sort((a, b) => b - a);
+  const strongestSectorEvidence =
+    sortedSectors.slice(0, 7).reduce((sum, value) => sum + value, 0) / 7;
+
+  /*
+   * Um preenchimento verdadeiro tende a aparecer em múltiplas escalas:
+   * centro, corpo e densidade escura. A borda impressa praticamente não
+   * participa da decisão.
+   */
+  const density = clamp01(
+    coreContrast * 0.3 +
+      bodyContrast * 0.16 +
+      darkRatio * 0.24 +
+      colorInk * 0.3,
+  );
+
+  const consistency = clamp01(strongestSectorEvidence * 0.55 + density * 0.45);
+
+  const score = clamp01(
+    density * 0.58 + consistency * 0.22 + blackInk * 0.1 + colorInk * 0.1,
+  );
 
   return {
     score,
@@ -790,27 +754,93 @@ function readQuestion(
   homography: Homography,
   questionIndex: number,
 ): AnswerResult {
-  const measurements: BubbleMeasurement[] = [];
-  const scores: number[] = [];
+  /*
+   * Fazemos múltiplas leituras da mesma questão:
+   * 1. centro exato;
+   * 2. pequenos deslocamentos;
+   * 3. pequenos ajustes no raio.
+   *
+   * Isso reduz bastante erros causados por uma homografia ligeiramente
+   * deslocada, compressão da foto ou preenchimento fora do centro.
+   */
+  const baseA = transformPoint(getBubbleCenter(questionIndex, 0), homography);
+  const baseB = transformPoint(getBubbleCenter(questionIndex, 1), homography);
 
-  const pointA = transformPoint(getBubbleCenter(questionIndex, 0), homography);
-  const pointB = transformPoint(getBubbleCenter(questionIndex, 1), homography);
-  const bubbleStep = distance(pointA, pointB);
-
-  const radius = Math.max(
+  const bubbleStep = distance(baseA, baseB);
+  const baseRadius = Math.max(
     4,
     bubbleStep * (OMR_TEMPLATE.bubble.radius / OMR_TEMPLATE.bubble.step),
   );
 
-  for (let alternative = 0; alternative < 4; alternative++) {
-    const center = transformPoint(
-      getBubbleCenter(questionIndex, alternative),
-      homography,
-    );
-    const measurement = measureBubble(ctx, center, radius);
-    measurements.push(measurement);
-    scores.push(measurement.score);
+  const passes = [
+    { dx: 0, dy: 0, radius: 1 },
+    { dx: -0.08, dy: 0, radius: 1 },
+    { dx: 0.08, dy: 0, radius: 1 },
+    { dx: 0, dy: -0.08, radius: 1 },
+    { dx: 0, dy: 0.08, radius: 1 },
+    { dx: -0.06, dy: -0.06, radius: 1 },
+    { dx: 0.06, dy: -0.06, radius: 1 },
+    { dx: -0.06, dy: 0.06, radius: 1 },
+    { dx: 0.06, dy: 0.06, radius: 1 },
+    { dx: 0, dy: 0, radius: 0.9 },
+    { dx: 0, dy: 0, radius: 1.1 },
+  ];
+
+  const allPassScores: number[][] = [];
+  const finalMeasurements: BubbleMeasurement[] = [];
+
+  for (const pass of passes) {
+    const passScores: number[] = [];
+
+    for (let alternative = 0; alternative < 4; alternative++) {
+      const base = transformPoint(
+        getBubbleCenter(questionIndex, alternative),
+        homography,
+      );
+
+      const center = {
+        x: base.x + pass.dx * bubbleStep,
+        y: base.y + pass.dy * bubbleStep,
+      };
+
+      const measurement = measureBubble(ctx, center, baseRadius * pass.radius);
+
+      passScores.push(measurement.score);
+
+      if (pass.dx === 0 && pass.dy === 0 && pass.radius === 1) {
+        finalMeasurements[alternative] = measurement;
+      }
+    }
+
+    allPassScores.push(passScores);
   }
+
+  /*
+   * Consenso ponderado:
+   * cada alternativa recebe a média das leituras, mas também é penalizada
+   * quando os resultados dos diferentes enquadramentos discordam.
+   */
+  const scores = ALTERNATIVES.map((_, alternative) => {
+    const values = allPassScores.map((pass) => pass[alternative] ?? 0);
+
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+
+    const sorted = [...values].sort((a, b) => a - b);
+    const trimmed =
+      sorted.length >= 5 ? sorted.slice(2, sorted.length - 2) : sorted;
+
+    const stableMean =
+      trimmed.reduce((sum, value) => sum + value, 0) /
+      Math.max(1, trimmed.length);
+
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const stability = clamp01(
+      1 - (maxValue - minValue) / Math.max(0.08, mean + 0.04),
+    );
+
+    return clamp01(stableMean * 0.82 + mean * 0.1 + stability * 0.08);
+  });
 
   const ordered = scores
     .map((value, index) => ({ value, index }))
@@ -829,40 +859,59 @@ function readQuestion(
     };
   }
 
-  const bestMeasurement = measurements[best.index];
-  const secondMeasurement = measurements[second.index];
+  const bestMeasurement = finalMeasurements[best.index] ?? {
+    score: best.value,
+    coreContrast: 0,
+    bodyContrast: 0,
+    darkRatio: 0,
+    colorInk: 0,
+    blackInk: 0,
+    coreMean: 255,
+    backgroundMean: 255,
+  };
 
-  // O valor absoluto pode ser baixo em uma foto escura. Por isso a decisão
-  // considera principalmente o quanto a melhor alternativa se destaca das
-  // outras três, sem abandonar um mínimo de evidência de tinta.
-  const rowMedian = median([...scores]);
+  const secondMeasurement = finalMeasurements[second.index] ?? {
+    score: second.value,
+    coreContrast: 0,
+    bodyContrast: 0,
+    darkRatio: 0,
+    colorInk: 0,
+    blackInk: 0,
+    coreMean: 255,
+    backgroundMean: 255,
+  };
+
+  const rowMedian = median(scores);
   const relativeEvidence = best.value - rowMedian;
   const separation = best.value - second.value;
 
   const hasInkEvidence =
-    best.value >= 0.025 &&
-    (bestMeasurement.blackInk >= 0.025 ||
-      bestMeasurement.colorInk >= 0.025 ||
-      bestMeasurement.coreContrast >= 0.008 ||
-      bestMeasurement.bodyContrast >= 0.008 ||
-      bestMeasurement.darkRatio >= 0.025 ||
-      relativeEvidence >= 0.016);
+    best.value >= 0.045 &&
+    (bestMeasurement.blackInk >= 0.035 ||
+      bestMeasurement.colorInk >= 0.035 ||
+      bestMeasurement.coreContrast >= 0.012 ||
+      bestMeasurement.bodyContrast >= 0.012 ||
+      bestMeasurement.darkRatio >= 0.035 ||
+      relativeEvidence >= 0.025);
 
   const secondHasInk =
-    second.value >= 0.025 &&
-    (secondMeasurement.blackInk >= 0.025 ||
-      secondMeasurement.colorInk >= 0.025 ||
-      secondMeasurement.coreContrast >= 0.008 ||
-      secondMeasurement.bodyContrast >= 0.008 ||
-      secondMeasurement.darkRatio >= 0.025);
+    second.value >= 0.04 &&
+    (secondMeasurement.blackInk >= 0.03 ||
+      secondMeasurement.colorInk >= 0.03 ||
+      secondMeasurement.coreContrast >= 0.01 ||
+      secondMeasurement.bodyContrast >= 0.01 ||
+      secondMeasurement.darkRatio >= 0.03);
 
-  // Se duas alternativas realmente possuem evidência parecida, não inventa
-  // uma resposta. Isso continua sendo obrigatório para segurança do sistema.
+  /*
+   * Regra de segurança:
+   * se duas letras estão próximas, NÃO escolhemos uma arbitrariamente.
+   * É preferível pedir confirmação do que gravar uma resposta errada.
+   */
   const ambiguous =
     hasInkEvidence &&
     secondHasInk &&
-    second.value >= Math.max(0.04, best.value * 0.78) &&
-    separation < Math.max(0.035, best.value * 0.22);
+    second.value >= Math.max(0.055, best.value * 0.84) &&
+    separation < Math.max(0.045, best.value * 0.2);
 
   if (!hasInkEvidence) {
     return {
@@ -876,14 +925,16 @@ function readQuestion(
 
   const candidates = ordered
     .filter(({ value, index }) => {
-      const measurement = measurements[index];
+      const measurement = finalMeasurements[index];
+      if (!measurement) return false;
+
       return (
-        value >= Math.max(0.03, best.value * 0.72) &&
-        (measurement.coreContrast >= 0.006 ||
-          measurement.bodyContrast >= 0.006 ||
-          measurement.darkRatio >= 0.02 ||
-          measurement.blackInk >= 0.02 ||
-          measurement.colorInk >= 0.02)
+        value >= Math.max(0.045, best.value * 0.74) &&
+        (measurement.coreContrast >= 0.008 ||
+          measurement.bodyContrast >= 0.008 ||
+          measurement.darkRatio >= 0.025 ||
+          measurement.blackInk >= 0.025 ||
+          measurement.colorInk >= 0.025)
       );
     })
     .slice(0, 4)
@@ -892,17 +943,17 @@ function readQuestion(
       score: value,
     }));
 
-  // Confiança baseada em três coisas: força absoluta, diferença para a
-  // segunda alternativa e diferença em relação ao fundo da própria linha.
   const separationConfidence = clamp01(
-    separation / Math.max(0.045, best.value * 0.35),
+    separation / Math.max(0.055, best.value * 0.32),
   );
-  const strengthConfidence = clamp01(best.value / 0.2);
-  const relativeConfidence = clamp01(relativeEvidence / 0.075);
+
+  const strengthConfidence = clamp01(best.value / 0.24);
+
+  const relativeConfidence = clamp01(relativeEvidence / 0.085);
 
   const confidence = clamp01(
-    separationConfidence * 0.48 +
-      strengthConfidence * 0.27 +
+    separationConfidence * 0.5 +
+      strengthConfidence * 0.25 +
       relativeConfidence * 0.25,
   );
 
@@ -1394,8 +1445,8 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   // ====================================================
 
   return (
-    <div className="fixed inset-0 z-9999 bg-black">
-      <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-black">
+    <div className="fixed inset-0 z-[9999] bg-black">
+      <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-black">
         {!preview ? (
           <>
             {/* ==================================================
@@ -1455,8 +1506,8 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
             ================================================== */}
 
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-5">
-              <div className="relative w-full max-w-275">
-                <div className="aspect-1123/380 w-full rounded-xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+              <div className="relative w-full max-w-[1100px]">
+                <div className="aspect-[1123/380] w-full rounded-xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
 
                 <div className="absolute left-0 top-0 h-8 w-8 border-l-4 border-t-4 border-white" />
 
@@ -1488,7 +1539,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                     type="button"
                     onClick={capture}
                     disabled={loading || !stream || !cameraReady}
-                    className="flex h-16 min-w-47.5 items-center justify-center gap-3 rounded-full bg-blue-600 px-7 text-base font-black text-white shadow-xl disabled:opacity-40"
+                    className="flex h-16 min-w-[190px] items-center justify-center gap-3 rounded-full bg-blue-600 px-7 text-base font-black text-white shadow-xl disabled:opacity-40"
                   >
                     <Camera size={23} />
 
