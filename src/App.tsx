@@ -49,6 +49,7 @@ import {
   signOut,
   onAuthStateChanged,
   setPersistence,
+  updateProfile,
   browserLocalPersistence,
   type User,
 } from "firebase/auth";
@@ -3626,14 +3627,33 @@ export default function App() {
           setAuthError("Este e-mail não está autorizado. Solicite sua inclusão à administração.");
           return;
         }
-        // Atualiza nome/e-mail no documento já autorizado.
-        await setDoc(doc(db, "professores", allowed.docs[0].id), {
-          ...allowed.docs[0].data(),
-          Nome: fullName.trim(),
+        // Salva o nome no documento autorizado. Com merge:true, o Firestore
+        // cria o campo Nome se ainda não existir e atualiza somente os campos
+        // enviados, preservando os demais dados do professor.
+        const teacherName = fullName.trim();
+        const teacherData = {
+          Nome: teacherName,
           Email: normalizedEmail,
           uid: credential.user.uid,
           atualizadoEm: serverTimestamp(),
-        });
+        };
+        await setDoc(
+          doc(db, "professores", allowed.docs[0].id),
+          teacherData,
+          { merge: true },
+        );
+        await updateProfile(credential.user, { displayName: teacherName });
+        const updatedTeacher = {
+          ...allowed.docs[0].data(),
+          Nome: teacherName,
+          Email: normalizedEmail,
+          uid: credential.user.uid,
+        } as AuthorizedTeacher;
+        setTeacher(updatedTeacher);
+        localStorage.setItem(
+          `corretor-professor-${credential.user.uid}`,
+          JSON.stringify(updatedTeacher),
+        );
       } else await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
     } catch (e) {
       const err = e as { code?: string };
