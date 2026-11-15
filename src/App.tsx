@@ -2725,7 +2725,7 @@ function ReviewPage({
             </div>
           )}
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            {answers.slice(0, total).map((answer, index) => (
+            {Array.from({ length: total }, (_, index) => answers[index] ?? "—").map((answer, index) => (
               <button
                 type="button"
                 key={index}
@@ -2766,7 +2766,17 @@ function ReviewPage({
             <div className="mb-5 text-center">
               <p className="text-sm font-bold text-blue-600">EDITAR RESPOSTA</p>
               <h3 className="mt-1 text-2xl font-black">Questão {editingIndex + 1}</h3>
-              <p className="mt-1 text-sm text-blue-500">Selecione a alternativa correta</p>
+              <p className="mt-1 text-sm text-blue-500">Resposta marcada pelo aluno e gabarito oficial</p>
+              <div className="mt-3 rounded-2xl bg-blue-50 p-3 text-left text-sm">
+                <p><b>Resposta do aluno:</b> {answers[editingIndex] ?? "Não identificada"}</p>
+                <p><b>Gabarito:</b> {avaliacao.gabarito[editingIndex] ?? "Não cadastrado"}</p>
+                {answers[editingIndex] && avaliacao.gabarito[editingIndex] && (
+                  <p className={`mt-2 font-black ${answers[editingIndex] === avaliacao.gabarito[editingIndex] ? "text-emerald-700" : "text-red-700"}`}>
+                    {answers[editingIndex] === avaliacao.gabarito[editingIndex] ? "Resposta correta" : "Resposta incorreta"}
+                  </p>
+                )}
+              </div>
+              <p className="mt-3 text-sm text-blue-500">Para corrigir manualmente, escolha a alternativa abaixo.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {alternatives.map((alternative) => (
@@ -3110,7 +3120,7 @@ function ScanPage({
               >
                 <Check size={18} />
 
-                {saving ? "Salvando..." : "Simular correção"}
+                {saving ? "Salvando..." : "Corrigir manualmente"}
               </button>
             </div>
           </div>

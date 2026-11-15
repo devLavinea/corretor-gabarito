@@ -1781,13 +1781,10 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                         <button
                           type="button"
                           onClick={confirmResult}
-                          disabled={result.uncertain.length > 0}
-                          className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-black text-white"
                         >
                           <CheckCircle2 size={18} />
-                          {result.uncertain.length > 0
-                            ? "Revise antes de confirmar"
-                            : "Confirmar correção"}
+                          Revisar e editar respostas
                         </button>
                       </div>
                     </div>
