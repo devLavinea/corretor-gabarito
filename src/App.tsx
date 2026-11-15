@@ -18,6 +18,8 @@ import {
   ChevronDown,
   FileSpreadsheet,
   LockKeyhole,
+  Eye,
+  EyeOff,
   FileText,
   GraduationCap,
   Plus,
@@ -50,6 +52,10 @@ import {
   onAuthStateChanged,
   setPersistence,
   updateProfile,
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  sendPasswordResetEmail,
   browserLocalPersistence,
   type User,
 } from "firebase/auth";
@@ -3548,6 +3554,16 @@ export default function App() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [authError, setAuthError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showPasswordPanel, setShowPasswordPanel] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [resetMessage, setResetMessage] = useState("");
+  const [resetError, setResetError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -3612,6 +3628,43 @@ export default function App() {
     setUser(null);
   };
 
+  const handleChangePassword = async (event: FormEvent) => {
+    event.preventDefault();
+    setPasswordError("");
+    setPasswordMessage("");
+    if (!user || !user.email) return;
+    if (newPassword.length < 6) {
+      setPasswordError("A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError("A confirmação não corresponde à nova senha.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const credential = EmailAuthProvider.credential(user.email, currentPassword);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPasswordMessage("Senha alterada com sucesso!");
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? "";
+      const messages: Record<string, string> = {
+        "auth/invalid-credential": "A senha atual está incorreta.",
+        "auth/wrong-password": "A senha atual está incorreta.",
+        "auth/weak-password": "A nova senha deve ter pelo menos 6 caracteres.",
+        "auth/requires-recent-login": "Sua sessão expirou para esta operação. Saia e entre novamente antes de alterar a senha.",
+        "auth/too-many-requests": "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+      };
+      setPasswordError(messages[code] ?? "Não foi possível alterar a senha. Confira a senha atual e tente novamente.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleAuth = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setAuthError("");
     try {
@@ -3667,6 +3720,31 @@ export default function App() {
     } finally { setBusy(false); }
   };
 
+  const handleForgotPassword = async () => {
+    setResetError("");
+    setResetMessage("");
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setResetError("Digite seu e-mail no campo acima para receber o link de recuperação.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await sendPasswordResetEmail(auth, normalizedEmail);
+      setResetMessage("Se esse e-mail estiver cadastrado, você receberá um link para redefinir sua senha. Verifique também a caixa de spam.");
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? "";
+      const messages: Record<string, string> = {
+        "auth/invalid-email": "Digite um endereço de e-mail válido.",
+        "auth/too-many-requests": "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+        "auth/user-not-found": "Se esse e-mail estiver cadastrado, você receberá um link para redefinir sua senha. Confira também a caixa de spam.",
+      };
+      setResetError(messages[code] ?? "Não foi possível enviar o e-mail de recuperação. Confira o endereço e tente novamente.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleGoogle = async () => {
     setBusy(true); setAuthError("");
     try { await signInWithPopup(auth, new GoogleAuthProvider()); }
@@ -3675,7 +3753,57 @@ export default function App() {
   };
 
   if (checking) return <div className="min-h-screen grid place-items-center bg-blue-50 text-blue-600 font-semibold">Verificando acesso…</div>;
-  if (user && teacher) return <><div className="flex items-center justify-between bg-blue-900 px-5 py-3 text-white text-sm"><strong>Olá, {teacher.Nome || user.displayName || user.email}!</strong><button onClick={handleSignOut} className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">Sair</button></div><MainApp /></>;
+  if (user && teacher) return <>
+    <div className="flex items-center justify-between gap-3 bg-blue-900 px-5 py-3 text-white text-sm">
+      <strong className="truncate">Olá, {teacher.Nome || user.displayName || user.email}!</strong>
+      <div className="flex shrink-0 items-center gap-2">
+        <button onClick={() => { setShowPasswordPanel(true); setPasswordError(""); setPasswordMessage(""); }} className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">
+          <LockKeyhole size={16} /> Alterar senha
+        </button>
+        <button onClick={handleSignOut} className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">Sair</button>
+      </div>
+    </div>
+    {showPasswordPanel && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
+        <section className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="mb-5 flex items-start justify-between gap-3">
+            <div>
+              <h2 id="change-password-title" className="text-xl font-bold text-slate-900">Alterar senha</h2>
+              <p className="mt-1 text-sm text-slate-500">Digite sua senha atual e escolha uma nova senha.</p>
+            </div>
+            <button type="button" onClick={() => setShowPasswordPanel(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X size={20} /></button>
+          </div>
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <label className="block text-sm font-semibold text-slate-700">Senha atual
+              <input type="password" required autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="Digite sua senha atual" />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">Nova senha
+              <input type="password" required minLength={6} autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="Mínimo de 6 caracteres" />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">Confirmar nova senha
+              <input type="password" required minLength={6} autoComplete="new-password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="Digite novamente a nova senha" />
+            </label>
+            {passwordError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{passwordError}</p>}
+            {passwordMessage && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{passwordMessage}</p>}
+            <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setShowPasswordPanel(false)} className="rounded-xl border border-slate-300 px-4 py-3 font-semibold text-slate-700 hover:bg-slate-50">Fechar</button>
+              <button type="submit" disabled={busy} className="rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white hover:bg-blue-800 disabled:opacity-60">{busy ? "Salvando…" : "Salvar nova senha"}</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    )}
+    <MainApp />
+  </>;
 
-  return <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 flex items-center justify-center p-4"><section className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl border border-blue-100"><img src="/logo-corretor.png" alt="Logo Corretor Gabarito" className="mx-auto mb-5 h-28 w-28 rounded-full object-cover shadow-md"/><h1 className="text-center text-2xl font-black text-blue-800">Corretor Gabarito</h1><p className="mt-2 text-center text-blue-500">Acesso exclusivo para professores</p><form onSubmit={handleAuth} className="mt-7 space-y-4">{mode==="signup" && <label className="block text-sm font-semibold text-blue-700">Nome completo<input type="text" required value={fullName} onChange={e=>setFullName(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="Seu nome completo"/></label>}<label className="block text-sm font-semibold text-blue-700">E-mail<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="professor@email.com"/></label><label className="block text-sm font-semibold text-blue-700">Senha<input type="password" required minLength={6} value={password} onChange={e=>setPassword(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="Sua senha"/></label>{mode==="signup" && <label className="block text-sm font-semibold text-blue-700">Confirmar senha<input type="password" required minLength={6} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="Digite a senha novamente"/></label>}{authError && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{authError}</p>}<button disabled={busy} className="w-full rounded-xl bg-blue-600 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-60">{busy?"Aguarde…":mode==="login"?"Entrar":"Cadastrar"}</button></form><div className="my-4 flex items-center gap-3 text-xs text-blue-400"><span className="h-px flex-1 bg-blue-200"/>ou<span className="h-px flex-1 bg-blue-200"/></div><button onClick={handleGoogle} disabled={busy} className="flex w-full items-center justify-center gap-3 rounded-lg border border-[#dadce0] bg-white py-3 text-[15px] font-medium text-[#3c4043] shadow-sm hover:bg-[#f8faff] hover:border-[#d2e3fc] disabled:opacity-60"><svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.65 13.45 24 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.92c-.58 2.96-2.26 5.47-4.78 7.16l7.73 6C44.37 37.95 46.98 31.7 46.98 24.55z"/><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.28-3.12.78-4.59l-7.98-6.19A23.93 23.93 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.82l-7.73-6c-2.14 1.44-4.88 2.3-8.17 2.3-6.28 0-11.6-4.24-13.47-9.9l-7.97 6.2C6.51 42.62 14.62 48 24 48z"/></svg>Continuar com Google</button><p className="mt-6 text-center text-sm text-blue-500">{mode==="login"?"Ainda não tem conta?":"Já possui conta?"} <button onClick={()=>{setMode(mode==="login"?"signup":"login");setAuthError("");}} className="font-bold text-blue-600">{mode==="login"?"Cadastrar":"Fazer login"}</button></p><p className="mt-4 text-center text-xs text-blue-400">Cadastro e acesso somente para e-mails autorizados.</p></section></main>;
+  return <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 flex items-center justify-center p-4"><section className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl border border-blue-100"><img src="/logo-corretor.png" alt="Logo Corretor Gabarito" className="mx-auto mb-5 h-28 w-28 rounded-full object-cover shadow-md"/><h1 className="text-center text-2xl font-black text-blue-800">Corretor Gabarito</h1><p className="mt-2 text-center text-blue-500">Acesso exclusivo para professores</p><form onSubmit={handleAuth} className="mt-7 space-y-4">{mode==="signup" && <label className="block text-sm font-semibold text-blue-700">Nome completo<input type="text" required value={fullName} onChange={e=>setFullName(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="Seu nome completo"/></label>}<label className="block text-sm font-semibold text-blue-700">E-mail<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="professor@email.com"/></label><label className="block text-sm font-semibold text-blue-700">Senha
+<div className="relative mt-1">
+<input type={showLoginPassword ? "text" : "password"} required minLength={6} value={password} onChange={e=>{setPassword(e.target.value);setResetError("");setResetMessage("");}} className="w-full rounded-xl border border-blue-200 px-4 py-3 pr-12 outline-none focus:border-blue-500" placeholder="Sua senha" autoComplete={mode === "login" ? "current-password" : "new-password"}/>
+<button type="button" onClick={()=>setShowLoginPassword(v=>!v)} className="absolute inset-y-0 right-0 flex items-center px-4 text-blue-500 hover:text-blue-800" aria-label={showLoginPassword ? "Ocultar senha" : "Mostrar senha"} title={showLoginPassword ? "Ocultar senha" : "Mostrar senha"}>{showLoginPassword ? <EyeOff size={19}/> : <Eye size={19}/>}</button>
+</div></label>
+{mode==="signup" && <label className="block text-sm font-semibold text-blue-700">Confirmar senha
+<div className="relative mt-1"><input type={showConfirmPassword ? "text" : "password"} required minLength={6} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} className="w-full rounded-xl border border-blue-200 px-4 py-3 pr-12 outline-none focus:border-blue-500" placeholder="Digite a senha novamente" autoComplete="new-password"/><button type="button" onClick={()=>setShowConfirmPassword(v=>!v)} className="absolute inset-y-0 right-0 flex items-center px-4 text-blue-500 hover:text-blue-800" aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Mostrar confirmação de senha"} title={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}>{showConfirmPassword ? <EyeOff size={19}/> : <Eye size={19}/>}</button></div></label>}
+{mode==="login" && <div className="-mt-1 text-right"><button type="button" onClick={handleForgotPassword} disabled={busy} className="text-sm font-semibold text-blue-600 underline-offset-4 hover:text-blue-800 hover:underline disabled:opacity-60">Esqueci minha senha</button></div>}
+{resetError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{resetError}</p>}
+{resetMessage && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{resetMessage}</p>}{authError && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{authError}</p>}<button disabled={busy} className="w-full rounded-xl bg-blue-600 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-60">{busy?"Aguarde…":mode==="login"?"Entrar":"Cadastrar"}</button></form><div className="my-4 flex items-center gap-3 text-xs text-blue-400"><span className="h-px flex-1 bg-blue-200"/>ou<span className="h-px flex-1 bg-blue-200"/></div><button onClick={handleGoogle} disabled={busy} className="flex w-full items-center justify-center gap-3 rounded-lg border border-[#dadce0] bg-white py-3 text-[15px] font-medium text-[#3c4043] shadow-sm hover:bg-[#f8faff] hover:border-[#d2e3fc] disabled:opacity-60"><svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.65 13.45 24 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.92c-.58 2.96-2.26 5.47-4.78 7.16l7.73 6C44.37 37.95 46.98 31.7 46.98 24.55z"/><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.28-3.12.78-4.59l-7.98-6.19A23.93 23.93 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.82l-7.73-6c-2.14 1.44-4.88 2.3-8.17 2.3-6.28 0-11.6-4.24-13.47-9.9l-7.97 6.2C6.51 42.62 14.62 48 24 48z"/></svg>Continuar com Google</button><p className="mt-6 text-center text-sm text-blue-500">{mode==="login"?"Ainda não tem conta?":"Já possui conta?"} <button onClick={()=>{setMode(mode==="login"?"signup":"login");setAuthError("");}} className="font-bold text-blue-600">{mode==="login"?"Cadastrar":"Fazer login"}</button></p><p className="mt-4 text-center text-xs text-blue-400">Cadastro e acesso somente para e-mails autorizados.</p></section></main>;
 }
