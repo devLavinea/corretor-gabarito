@@ -1099,6 +1099,32 @@ function MainApp() {
     }
   }
 
+  async function removeStudentResult(result: Result) {
+    if (!result.id) {
+      setError("Não foi possível identificar esta resposta para exclusão.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Deseja excluir somente a resposta de "${result.student}" nesta avaliação?`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setError("");
+      await deleteDoc(doc(db, "resultados", result.id));
+      setResults((current) =>
+        current.filter((item) => item.id !== result.id),
+      );
+    } catch (err) {
+      console.error(err);
+      setError("Não foi possível excluir a resposta do aluno.");
+    }
+  }
+
   async function removeAvaliacao(avaliacao: Avaliacao) {
     if (
       !window.confirm(
@@ -1521,6 +1547,7 @@ function MainApp() {
               );
             }}
             onDelete={(avaliacao) => void removeAvaliacao(avaliacao)}
+            onDeleteResult={(result) => void removeStudentResult(result)}
           />
         )}
 
@@ -1572,9 +1599,7 @@ function MainApp() {
             students={filteredForEvaluation}
             onSelectStudent={(student) => setSelectedStudent(student)}
             onOpenCamera={() => setCameraOpen(true)}
-            onSimulate={() => void saveResult(currentAvaliacao.gabarito)}
             onBack={() => setPage(scanReturnPage)}
-            saving={savingResult}
           />
         )}
 
@@ -2406,6 +2431,7 @@ function AvaliacoesPage({
   onCorrect,
   onUpdate,
   onDelete,
+  onDeleteResult,
 }: {
   avaliacoes: Avaliacao[];
   students: Student[];
@@ -2414,6 +2440,7 @@ function AvaliacoesPage({
   onCorrect: (avaliacao: Avaliacao) => void;
   onUpdate: (avaliacao: Avaliacao) => void;
   onDelete: (avaliacao: Avaliacao) => void;
+  onDeleteResult: (result: Result) => void;
 }) {
   const [editing, setEditing] = useState<Avaliacao | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -2553,6 +2580,18 @@ function AvaliacoesPage({
                               </div>
                             </div>
 
+                            {result && (
+                              <button
+                                type="button"
+                                onClick={() => onDeleteResult(result)}
+                                className="inline-flex items-center gap-1 self-start rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100"
+                                title={`Excluir resposta de ${student.nome}`}
+                                aria-label={`Excluir resposta de ${student.nome}`}
+                              >
+                                <Trash2 size={14} />
+                                Excluir resposta
+                              </button>
+                            )}
                             <div className="flex flex-wrap gap-1">
                               {(result?.answers || []).map((answer, index) => (
                                 <span
@@ -3005,18 +3044,14 @@ function ScanPage({
   students,
   onSelectStudent,
   onOpenCamera,
-  onSimulate,
   onBack,
-  saving,
 }: {
   avaliacao: Avaliacao;
   selectedStudent: Student | null;
   students: Student[];
   onSelectStudent: (student: Student) => void;
   onOpenCamera: () => void;
-  onSimulate: () => void;
   onBack: () => void;
-  saving: boolean;
 }) {
   return (
     <section className="mx-auto max-w-5xl">
@@ -3113,15 +3148,6 @@ function ScanPage({
                 Abrir câmera
               </button>
 
-              <button
-                disabled={!selectedStudent || saving}
-                onClick={onSimulate}
-                className="mt-5 inline-flex items-center gap-2 rounded-2xl border bg-white px-5 py-3 font-bold disabled:opacity-40"
-              >
-                <Check size={18} />
-
-                {saving ? "Salvando..." : "Corrigir manualmente"}
-              </button>
             </div>
           </div>
 
