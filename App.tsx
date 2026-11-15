@@ -24,7 +24,11 @@ import {
   getDocs,
   serverTimestamp,
 } from "firebase/firestore";
-import { signInAnonymously } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword, GoogleAuthProvider, onAuthStateChanged,
+  signInWithEmailAndPassword, signInWithPopup, signOut, type User,
+} from "firebase/auth";
+import { getDocs, query, where, setDoc } from "firebase/firestore";
 
 import { db, auth } from "./firebase";
 import { exportResults } from "./exportExcel";
@@ -109,27 +113,61 @@ export default function App() {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [firebaseReady, setFirebaseReady] = useState(false);
   const [error, setError] = useState("");
+  const [user, setUser] = useState<User | null>(null);
+  const [teacherName, setTeacherName] = useState("");
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
 
-
-  useEffect(() => {
-    const start = async () => {
-      try {
-        await signInAnonymously(auth);
-        setFirebaseReady(true);
-        await Promise.all([loadTurmas(), loadStudents(), loadAvaliacoes(), loadResults()]);
-      } catch (err) {
-        console.error("ERRO FIREBASE:", err);
-        const firebaseError = err as { code?: string; message?: string };
-        setError(
-          `Erro Firebase: ${firebaseError.code ?? "desconhecido"} — ${
-            firebaseError.message ?? "Não foi possível conectar ao Firebase."
-          }`,
-        );
+  useEffect(() => onAuthStateChanged(auth, async (currentUser) => {
+    setUser(currentUser);
+    if (!currentUser) { setAuthLoading(false); setFirebaseReady(false); return; }
+    try {
+      const email = currentUser.email?.trim().toLowerCase();
+      if (!email) throw new Error("Sua conta não possui e-mail.");
+      const allowed = await getDocs(query(collection(db, "professores"), where("Email", "==", email)));
+      if (allowed.empty) {
+        await signOut(auth);
+        setError("Este e-mail não está autorizado. Solicite à administração seu cadastro como professor.");
+        setAuthLoading(false); return;
       }
-    };
+      const data = allowed.docs[0].data();
+      const name = String(data.Nome ?? data.nome ?? currentUser.displayName ?? email);
+      setTeacherName(name);
+      // Cria o vínculo seguro pelo UID para as regras do Firestore.
+      await setDoc(doc(db, "professores", currentUser.uid), { Email: email, Nome: name, uid: currentUser.uid }, { merge: true });
+      setFirebaseReady(true);
+      await Promise.all([loadTurmas(), loadStudents(), loadAvaliacoes(), loadResults()]);
+    } catch (err) {
+      console.error("ERRO FIREBASE:", err);
+      const firebaseError = err as { code?: string; message?: string };
+      setError(`Erro Firebase: ${firebaseError.code ?? "desconhecido"} — ${firebaseError.message ?? "Não foi possível conectar."}`);
+      await signOut(auth).catch(() => undefined);
+    } finally { setAuthLoading(false); }
+  }), []);
 
-    void start();
-  }, []);
+  async function handleEmailAuth(event: FormEvent) {
+    event.preventDefault(); setAuthBusy(true); setError("");
+    try {
+      if (authMode === "signup") await createUserWithEmailAndPassword(auth, authEmail.trim(), authPassword);
+      else await signInWithEmailAndPassword(auth, authEmail.trim(), authPassword);
+    } catch (err) {
+      const e = err as { code?: string };
+      const messages: Record<string, string> = {
+        "auth/invalid-credential": "E-mail ou senha incorretos.", "auth/email-already-in-use": "Este e-mail já possui cadastro.",
+        "auth/weak-password": "A senha precisa ter pelo menos 6 caracteres.", "auth/invalid-email": "E-mail inválido.",
+      };
+      setError(messages[e.code ?? ""] ?? "Não foi possível autenticar. Confira os dados e tente novamente.");
+    } finally { setAuthBusy(false); }
+  }
+  async function handleGoogle() {
+    setAuthBusy(true); setError("");
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+    catch (err) { const e = err as { code?: string }; setError(e.code === "auth/popup-closed-by-user" ? "Login cancelado." : "Não foi possível entrar com Google."); }
+    finally { setAuthBusy(false); }
+  }
 
   async function loadTurmas() {
     try {
@@ -456,8 +494,29 @@ export default function App() {
     [students, currentAvaliacao],
   );
 
+  if (authLoading) return <div className="grid min-h-screen place-items-center bg-blue-50 text-blue-600">Verificando acesso...</div>;
+  if (!user || !firebaseReady) return (
+    <div className="grid min-h-screen place-items-center bg-gradient-to-br from-blue-50 to-blue-100 p-4">
+      <section className="w-full max-w-md rounded-3xl bg-white p-7 shadow-xl">
+        <div className="mb-5 flex justify-center"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-blue-600 text-white"><GraduationCap size={30}/></span></div>
+        <h1 className="text-center text-2xl font-bold text-blue-900">Corretor Gabarito</h1>
+        <p className="mb-6 mt-2 text-center text-sm text-blue-500">Acesso exclusivo para professores autorizados</p>
+        {error && <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+        <button onClick={handleGoogle} disabled={authBusy} className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 px-4 py-3 font-semibold hover:bg-blue-50 disabled:opacity-50">Entrar com Google</button>
+        <div className="mb-4 flex items-center gap-3 text-xs text-blue-400"><span className="h-px flex-1 bg-blue-200"/>ou com e-mail<span className="h-px flex-1 bg-blue-200"/></div>
+        <form onSubmit={handleEmailAuth} className="space-y-3">
+          <input type="email" required value={authEmail} onChange={e=>setAuthEmail(e.target.value)} placeholder="E-mail" className="w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500"/>
+          <input type="password" required minLength={6} value={authPassword} onChange={e=>setAuthPassword(e.target.value)} placeholder="Senha (mínimo 6 caracteres)" className="w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500"/>
+          <button type="submit" disabled={authBusy} className="w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{authBusy ? "Aguarde..." : authMode === "login" ? "Entrar" : "Criar conta"}</button>
+        </form>
+        <p className="mt-5 text-center text-sm text-blue-600">{authMode === "login" ? "Ainda não tem conta?" : "Já tem uma conta?"} <button onClick={()=>{setAuthMode(authMode === "login" ? "signup" : "login");setError("")}} className="font-semibold text-blue-600">{authMode === "login" ? "Cadastre-se" : "Faça login"}</button></p>
+        <p className="mt-4 text-center text-xs text-blue-400">O cadastro só é liberado para e-mails previamente autorizados.</p>
+      </section>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen bg-blue-50 text-blue-900">
       <header className="sticky top-0 z-30 border-b bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
           <button onClick={() => setPage("home")} className="flex items-center gap-3 text-left">
@@ -465,8 +524,8 @@ export default function App() {
               <GraduationCap size={23} />
             </span>
             <span>
-              <b className="block text-lg">Corretor Marineide</b>
-              <small className="text-slate-500">Sistema exclusivo da professora</small>
+              <b className="block text-lg">Corretor Gabarito</b>
+              <small className="text-blue-500">Plataforma para professores</small>
             </span>
           </button>
 
@@ -479,9 +538,10 @@ export default function App() {
             <NavButton active={page === "results"} icon={<FileSpreadsheet size={17} />} label="Resultados" onClick={() => setPage("results")} />
           </nav>
 
-          <span className={`hidden rounded-full px-3 py-1 text-xs font-bold sm:inline-flex ${firebaseReady ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-            {firebaseReady ? "Firebase conectado" : "Conectando..."}
-          </span>
+          <div className="flex items-center gap-2 text-right">
+            <span className="hidden text-sm font-semibold text-blue-700 sm:block">Olá, {teacherName}!</span>
+            <button onClick={()=>signOut(auth)} className="rounded-lg border px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50">Sair</button>
+          </div>
         </div>
 
         <div className="border-t bg-white px-3 py-2 md:hidden">
@@ -551,7 +611,7 @@ export default function App() {
             <div className="mb-6">
               <p className="text-sm font-bold text-blue-600">GABARITO</p>
               <h2 className="mt-1 text-3xl font-black">Folha de respostas para os alunos</h2>
-              <p className="mt-2 max-w-3xl text-slate-500">
+              <p className="mt-2 max-w-3xl text-blue-500">
                 Este é o mesmo modelo padronizado usado pelo leitor OMR. Baixe, imprima em A4 e entregue aos alunos para preencher.
               </p>
             </div>
@@ -593,7 +653,7 @@ export default function App() {
             results={results}
             avaliacoes={avaliacoes}
             turmas={turmas}
-            onExport={() => exportResults(results, "Resultados Marineide")}
+            onExport={() => exportResults(results, "Resultados Corretor Gabarito")}
           />
         )}
       </main>
@@ -604,18 +664,18 @@ export default function App() {
 }
 
 function NavButton({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
-  return <button onClick={onClick} className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold transition ${active ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-100"}`}>{icon}{label}</button>;
+  return <button onClick={onClick} className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold transition ${active ? "bg-blue-50 text-blue-700" : "text-blue-600 hover:bg-blue-100"}`}>{icon}{label}</button>;
 }
 
 function MobileNav({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
-  return <button onClick={onClick} className="flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100">{icon}{label}</button>;
+  return <button onClick={onClick} className="flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-xs font-bold text-blue-600 hover:bg-blue-100">{icon}{label}</button>;
 }
 
 function Home({ studentsCount, turmasCount, resultsCount, avaliacoesCount, onTurmas, onStudents, onNew, onResults }: { studentsCount: number; turmasCount: number; resultsCount: number; avaliacoesCount: number; onTurmas: () => void; onStudents: () => void; onNew: () => void; onResults: () => void }) {
   return <div className="space-y-7">
     <section className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-700 p-7 text-white shadow-lg md:p-10">
-      <p className="text-sm font-bold uppercase tracking-wider text-blue-100">Sistema exclusivo</p>
-      <h1 className="mt-2 max-w-2xl text-4xl font-black tracking-tight md:text-5xl">Olá, professora Marineide.</h1>
+      <p className="text-sm font-bold uppercase tracking-wider text-blue-100">Plataforma para professores</p>
+      <h1 className="mt-2 max-w-2xl text-4xl font-black tracking-tight md:text-5xl">Olá, professor(a).</h1>
       <p className="mt-4 max-w-2xl text-base leading-7 text-blue-50 md:text-lg">Organize suas turmas, alunos e avaliações e faça a correção dos gabaritos em um único lugar.</p>
       <div className="mt-7 flex flex-wrap gap-3">
         <button onClick={onNew} className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-black text-blue-700 shadow-sm"><Plus size={18} />Nova avaliação</button>
@@ -637,11 +697,11 @@ function Home({ studentsCount, turmasCount, resultsCount, avaliacoesCount, onTur
 }
 
 function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: number | string }) {
-  return <div className="flex items-center gap-4 rounded-3xl border bg-white p-5 shadow-sm"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-50 text-blue-600">{icon}</span><div><p className="text-xs font-bold uppercase text-slate-400">{label}</p><p className="mt-1 text-2xl font-black">{value}</p></div></div>;
+  return <div className="flex items-center gap-4 rounded-3xl border bg-white p-5 shadow-sm"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-50 text-blue-600">{icon}</span><div><p className="text-xs font-bold uppercase text-blue-400">{label}</p><p className="mt-1 text-2xl font-black">{value}</p></div></div>;
 }
 
 function HomeCard({ icon, title, text, button, onClick }: { icon: ReactNode; title: string; text: string; button: string; onClick: () => void }) {
-  return <div className="rounded-3xl border bg-white p-6 shadow-sm"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-blue-600">{icon}</span><h2 className="mt-5 text-xl font-black">{title}</h2><p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">{text}</p><button onClick={onClick} className="mt-5 inline-flex items-center gap-2 font-bold text-blue-600">{button}<ChevronRight size={17} /></button></div>;
+  return <div className="rounded-3xl border bg-white p-6 shadow-sm"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-100 text-blue-600">{icon}</span><h2 className="mt-5 text-xl font-black">{title}</h2><p className="mt-2 min-h-12 text-sm leading-6 text-blue-500">{text}</p><button onClick={onClick} className="mt-5 inline-flex items-center gap-2 font-bold text-blue-600">{button}<ChevronRight size={17} /></button></div>;
 }
 
 function TurmasPage({ turmas, students, saving, deletingId, onAdd, onDelete }: { turmas: Turma[]; students: Student[]; saving: boolean; deletingId: string | null; onAdd: (nome: string, ano: string) => Promise<void>; onDelete: (turma: Turma) => Promise<void> }) {
@@ -655,18 +715,18 @@ function TurmasPage({ turmas, students, saving, deletingId, onAdd, onDelete }: {
   }
 
   return <section className="space-y-6">
-    <div><p className="text-sm font-bold text-blue-600">MINHAS TURMAS</p><h2 className="mt-1 text-3xl font-black">Turmas</h2><p className="mt-2 text-slate-500">Cadastre somente o nome da turma e o ano.</p></div>
+    <div><p className="text-sm font-bold text-blue-600">MINHAS TURMAS</p><h2 className="mt-1 text-3xl font-black">Turmas</h2><p className="mt-2 text-blue-500">Cadastre somente o nome da turma e o ano.</p></div>
     <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
       <form onSubmit={submit} className="h-fit rounded-3xl border bg-white p-6 shadow-sm">
-        <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><Plus /></span><div><h3 className="font-black">Cadastrar turma</h3><p className="text-xs text-slate-500">Salva automaticamente no Firebase</p></div></div>
+        <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><Plus /></span><div><h3 className="font-black">Cadastrar turma</h3><p className="text-xs text-blue-500">Salva automaticamente no Firebase</p></div></div>
         <label className="mt-6 block"><span className="mb-2 block text-sm font-bold">Nome da turma</span><input value={nome} onChange={(e) => setNome(e.target.value)} className="w-full rounded-2xl border px-4 py-3 outline-none focus:border-blue-500" placeholder="Ex.: 3° ano B" /></label>
         <label className="mt-4 block"><span className="mb-2 block text-sm font-bold">Ano</span><input type="number" value={ano} onChange={(e) => setAno(e.target.value)} className="w-full rounded-2xl border px-4 py-3 outline-none focus:border-blue-500" /></label>
         <button disabled={saving} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3 font-black text-white disabled:opacity-50"><Plus size={18} />{saving ? "Cadastrando..." : "Cadastrar turma"}</button>
       </form>
-      <div className="rounded-3xl border bg-white p-5 shadow-sm md:p-6"><h3 className="text-xl font-black">Turmas cadastradas</h3><p className="text-sm text-slate-500">{turmas.length} turma(s)</p><div className="mt-5 grid gap-3 sm:grid-cols-2">
-        {turmas.length === 0 ? <div className="col-span-full rounded-2xl border border-dashed p-8 text-center text-slate-500">Nenhuma turma cadastrada ainda.</div> : turmas.map((turma) => {
+      <div className="rounded-3xl border bg-white p-5 shadow-sm md:p-6"><h3 className="text-xl font-black">Turmas cadastradas</h3><p className="text-sm text-blue-500">{turmas.length} turma(s)</p><div className="mt-5 grid gap-3 sm:grid-cols-2">
+        {turmas.length === 0 ? <div className="col-span-full rounded-2xl border border-dashed p-8 text-center text-blue-500">Nenhuma turma cadastrada ainda.</div> : turmas.map((turma) => {
           const count = students.filter((student) => student.turmaId === turma.id).length;
-          return <div key={turma.id} className="rounded-2xl border p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{turma.nome}</p><p className="mt-1 text-sm text-slate-500">Ano: {turma.ano} • {count} aluno(s)</p></div><button onClick={() => onDelete(turma)} disabled={deletingId === turma.id || count > 0} title={count > 0 ? "Retire os alunos antes de excluir a turma" : "Excluir turma"} className="grid h-9 w-9 place-items-center rounded-xl text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>;
+          return <div key={turma.id} className="rounded-2xl border p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black">{turma.nome}</p><p className="mt-1 text-sm text-blue-500">Ano: {turma.ano} • {count} aluno(s)</p></div><button onClick={() => onDelete(turma)} disabled={deletingId === turma.id || count > 0} title={count > 0 ? "Retire os alunos antes de excluir a turma" : "Excluir turma"} className="grid h-9 w-9 place-items-center rounded-xl text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>;
         })}
       </div></div>
     </div>
@@ -684,27 +744,27 @@ function Students({ students, turmas, selectedTurmaId, setSelectedTurmaId, searc
   }
 
   return <section className="space-y-6">
-    <div><p className="text-sm font-bold text-blue-600">MEUS ALUNOS</p><h2 className="mt-1 text-3xl font-black">Alunos da professora Marineide</h2><p className="mt-2 text-slate-500">Cadastre cada aluno já vinculado à sua turma.</p></div>
+    <div><p className="text-sm font-bold text-blue-600">MEUS ALUNOS</p><h2 className="mt-1 text-3xl font-black">Meus alunos</h2><p className="mt-2 text-blue-500">Cadastre cada aluno já vinculado à sua turma.</p></div>
     <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
       <form onSubmit={submit} className="h-fit rounded-3xl border bg-white p-6 shadow-sm">
-        <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><UserPlus /></span><div><h3 className="font-black">Cadastrar aluno</h3><p className="text-xs text-slate-500">Escolha uma turma já cadastrada</p></div></div>
+        <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><UserPlus /></span><div><h3 className="font-black">Cadastrar aluno</h3><p className="text-xs text-blue-500">Escolha uma turma já cadastrada</p></div></div>
         <label className="mt-6 block"><span className="mb-2 block text-sm font-bold">Nome completo</span><input value={nome} onChange={(e) => setNome(e.target.value)} className="w-full rounded-2xl border px-4 py-3 outline-none focus:border-blue-500" placeholder="Ex.: Maria Silva" /></label>
         <label className="mt-4 block"><span className="mb-2 block text-sm font-bold">Turma</span><select value={turmaId} onChange={(e) => setTurmaId(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3 outline-none focus:border-blue-500"><option value="">Selecione a turma</option>{turmas.map((turma) => <option key={turma.id} value={turma.id}>{turma.nome} — {turma.ano}</option>)}</select></label>
         {turmas.length === 0 && <button type="button" onClick={onGoTurmas} className="mt-3 text-sm font-bold text-blue-600">Cadastrar uma turma primeiro →</button>}
         <button disabled={saving || turmas.length === 0} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3 font-black text-white disabled:opacity-50"><Plus size={18} />{saving ? "Cadastrando..." : "Cadastrar aluno"}</button>
       </form>
-      <div className="rounded-3xl border bg-white p-5 shadow-sm md:p-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h3 className="text-xl font-black">Lista de alunos</h3><p className="text-sm text-slate-500">{students.length} aluno(s) encontrado(s)</p></div><div className="flex gap-2 sm:w-[420px]"><select value={selectedTurmaId} onChange={(e) => setSelectedTurmaId(e.target.value)} className="rounded-2xl border bg-white px-3 py-3 text-sm outline-none"><option value="">Todas as turmas</option>{turmas.map((turma) => <option key={turma.id} value={turma.id}>{turma.nome}</option>)}</select><div className="relative flex-1"><Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full rounded-2xl border py-3 pl-10 pr-4 outline-none focus:border-blue-500" placeholder="Buscar aluno..." /></div></div></div><div className="mt-5 space-y-2">{loading ? <p className="rounded-2xl bg-slate-50 p-5 text-center text-sm text-slate-500">Carregando alunos...</p> : students.length === 0 ? <div className="rounded-2xl border border-dashed p-8 text-center"><Users className="mx-auto text-slate-300" size={34} /><p className="mt-3 font-bold">Nenhum aluno encontrado</p></div> : students.map((student) => <div key={student.id} className="flex items-center justify-between gap-3 rounded-2xl border p-4"><div className="min-w-0"><p className="truncate font-black">{student.nome}</p><p className="mt-1 text-sm text-slate-500">{student.turmaNome || student.turma || "Sem turma"}</p></div><button onClick={() => onDelete(student)} disabled={deletingId === student.id} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-red-500 hover:bg-red-50 disabled:opacity-40" title="Retirar aluno"><Trash2 size={18} /></button></div>)}</div></div>
+      <div className="rounded-3xl border bg-white p-5 shadow-sm md:p-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h3 className="text-xl font-black">Lista de alunos</h3><p className="text-sm text-blue-500">{students.length} aluno(s) encontrado(s)</p></div><div className="flex gap-2 sm:w-[420px]"><select value={selectedTurmaId} onChange={(e) => setSelectedTurmaId(e.target.value)} className="rounded-2xl border bg-white px-3 py-3 text-sm outline-none"><option value="">Todas as turmas</option>{turmas.map((turma) => <option key={turma.id} value={turma.id}>{turma.nome}</option>)}</select><div className="relative flex-1"><Search size={18} className="absolute left-3 top-1/2 -tranblue-y-1/2 text-blue-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full rounded-2xl border py-3 pl-10 pr-4 outline-none focus:border-blue-500" placeholder="Buscar aluno..." /></div></div></div><div className="mt-5 space-y-2">{loading ? <p className="rounded-2xl bg-blue-50 p-5 text-center text-sm text-blue-500">Carregando alunos...</p> : students.length === 0 ? <div className="rounded-2xl border border-dashed p-8 text-center"><Users className="mx-auto text-blue-300" size={34} /><p className="mt-3 font-bold">Nenhum aluno encontrado</p></div> : students.map((student) => <div key={student.id} className="flex items-center justify-between gap-3 rounded-2xl border p-4"><div className="min-w-0"><p className="truncate font-black">{student.nome}</p><p className="mt-1 text-sm text-blue-500">{student.turmaNome || student.turma || "Sem turma"}</p></div><button onClick={() => onDelete(student)} disabled={deletingId === student.id} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-red-500 hover:bg-red-50 disabled:opacity-40" title="Retirar aluno"><Trash2 size={18} /></button></div>)}</div></div>
     </div>
   </section>;
 }
 
 function Setup({ title, setTitle, disciplina, setDisciplina, turmaId, setTurmaId, turmas, keyAnswers, updateKey, onNext, saving }: { title: string; setTitle: (value: string) => void; disciplina: string; setDisciplina: (value: string) => void; turmaId: string; setTurmaId: (value: string) => void; turmas: Turma[]; keyAnswers: Answer[]; updateKey: (index: number, value: Answer) => void; onNext: () => void; saving: boolean }) {
-  return <section className="mx-auto max-w-4xl"><div className="mb-6"><p className="text-sm font-bold text-blue-600">NOVA AVALIAÇÃO</p><h2 className="mt-1 text-3xl font-black">Preparar avaliação</h2><p className="mt-2 text-slate-500">Escolha a turma e informe o gabarito. A avaliação será salva automaticamente.</p></div><div className="space-y-5 rounded-3xl border bg-white p-5 shadow-sm md:p-7">
-<GabaritoGenerator /><div className="grid gap-4 md:grid-cols-2"><label><span className="mb-2 block text-sm font-bold">Nome da avaliação</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full rounded-2xl border px-4 py-3 outline-none focus:border-blue-500" placeholder="Ex.: Avaliação de Matemática" /></label><label><span className="mb-2 block text-sm font-bold">Disciplina</span><input value={disciplina} onChange={(e) => setDisciplina(e.target.value)} className="w-full rounded-2xl border px-4 py-3 outline-none focus:border-blue-500" placeholder="Ex.: Matemática" /></label></div><label className="block"><span className="mb-2 block text-sm font-bold">Turma</span><select value={turmaId} onChange={(e) => setTurmaId(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3 outline-none focus:border-blue-500"><option value="">Selecione uma turma</option>{turmas.map((turma) => <option key={turma.id} value={turma.id}>{turma.nome} — {turma.ano}</option>)}</select></label>{turmas.length === 0 && <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">Cadastre uma turma antes de criar uma avaliação.</div>}<div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-bold">Gabarito oficial</span><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{keyAnswers.length} questões</span></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-5">{keyAnswers.map((answer, index) => <div key={index} className="rounded-2xl border bg-slate-50 p-3"><span className="text-sm font-black">{String(index + 1).padStart(2, "0")}</span><select value={answer} onChange={(e) => updateKey(index, e.target.value as Answer)} className="mt-2 w-full rounded-xl border bg-white px-2 py-2 font-bold">{alternatives.map((alternative) => <option key={alternative}>{alternative}</option>)}</select></div>)}</div></div><button disabled={saving || !turmas.length} onClick={onNext} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 font-black text-white disabled:opacity-50">{saving ? "Salvando avaliação..." : "Salvar avaliação e selecionar aluno"}<ChevronRight size={18} /></button></div></section>;
+  return <section className="mx-auto max-w-4xl"><div className="mb-6"><p className="text-sm font-bold text-blue-600">NOVA AVALIAÇÃO</p><h2 className="mt-1 text-3xl font-black">Preparar avaliação</h2><p className="mt-2 text-blue-500">Escolha a turma e informe o gabarito. A avaliação será salva automaticamente.</p></div><div className="space-y-5 rounded-3xl border bg-white p-5 shadow-sm md:p-7">
+<GabaritoGenerator /><div className="grid gap-4 md:grid-cols-2"><label><span className="mb-2 block text-sm font-bold">Nome da avaliação</span><input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full rounded-2xl border px-4 py-3 outline-none focus:border-blue-500" placeholder="Ex.: Avaliação de Matemática" /></label><label><span className="mb-2 block text-sm font-bold">Disciplina</span><input value={disciplina} onChange={(e) => setDisciplina(e.target.value)} className="w-full rounded-2xl border px-4 py-3 outline-none focus:border-blue-500" placeholder="Ex.: Matemática" /></label></div><label className="block"><span className="mb-2 block text-sm font-bold">Turma</span><select value={turmaId} onChange={(e) => setTurmaId(e.target.value)} className="w-full rounded-2xl border bg-white px-4 py-3 outline-none focus:border-blue-500"><option value="">Selecione uma turma</option>{turmas.map((turma) => <option key={turma.id} value={turma.id}>{turma.nome} — {turma.ano}</option>)}</select></label>{turmas.length === 0 && <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">Cadastre uma turma antes de criar uma avaliação.</div>}<div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-bold">Gabarito oficial</span><span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold">{keyAnswers.length} questões</span></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-5">{keyAnswers.map((answer, index) => <div key={index} className="rounded-2xl border bg-blue-50 p-3"><span className="text-sm font-black">{String(index + 1).padStart(2, "0")}</span><select value={answer} onChange={(e) => updateKey(index, e.target.value as Answer)} className="mt-2 w-full rounded-xl border bg-white px-2 py-2 font-bold">{alternatives.map((alternative) => <option key={alternative}>{alternative}</option>)}</select></div>)}</div></div><button disabled={saving || !turmas.length} onClick={onNext} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 font-black text-white disabled:opacity-50">{saving ? "Salvando avaliação..." : "Salvar avaliação e selecionar aluno"}<ChevronRight size={18} /></button></div></section>;
 }
 
 function ScanPage({ avaliacao, selectedStudent, students, onSelectStudent, onOpenCamera, onSimulate, onBack, saving }: { avaliacao: Avaliacao; selectedStudent: Student | null; students: Student[]; onSelectStudent: (student: Student) => void; onOpenCamera: () => void; onSimulate: () => void; onBack: () => void; saving: boolean }) {
-  return <section className="mx-auto max-w-5xl"><div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-sm font-bold text-blue-600">CORREÇÃO</p><h2 className="mt-1 text-3xl font-black">{avaliacao.titulo}</h2><p className="mt-2 text-slate-500">{avaliacao.disciplina} • {avaliacao.turmaNome} • {avaliacao.turmaAno}</p></div><button onClick={onBack} className="rounded-xl border bg-white px-4 py-2 text-sm font-bold">Voltar</button></div><div className="grid gap-5 lg:grid-cols-[340px_1fr]"><div className="rounded-3xl border bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h3 className="font-black">1. Selecione o aluno</h3><p className="text-xs text-slate-500">Alunos da turma {avaliacao.turmaNome}</p></div><Users className="text-blue-600" size={20} /></div><div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto">{students.length === 0 ? <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">Não há alunos cadastrados nessa turma.</div> : students.map((student) => <button key={student.id} onClick={() => onSelectStudent(student)} className={`w-full rounded-2xl border p-3 text-left transition ${selectedStudent?.id === student.id ? "border-blue-500 bg-blue-50" : "hover:bg-slate-50"}`}><p className="font-bold">{student.nome}</p><p className="text-xs text-slate-500">{student.turmaNome}</p></button>)}</div></div><div className="rounded-3xl border bg-white p-6 shadow-sm"><p className="text-sm font-bold text-blue-600">2. ESCANEAR GABARITO</p><div className="mt-4 rounded-3xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-8 text-center"><div className="mx-auto grid h-20 w-20 place-items-center rounded-3xl bg-white text-blue-600 shadow-sm"><Camera size={38} /></div><h3 className="mt-5 text-xl font-black">{selectedStudent ? `Aluno: ${selectedStudent.nome}` : "Selecione um aluno primeiro"}</h3><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">Depois de selecionar o aluno, abra a câmera para fazer a leitura automática das marcações da folha.</p><button disabled={!selectedStudent} onClick={onOpenCamera} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-40"><Camera size={18} />Abrir câmera</button><button disabled={!selectedStudent || saving} onClick={onSimulate} className="ml-2 mt-5 inline-flex items-center gap-2 rounded-2xl border bg-white px-5 py-3 font-bold disabled:opacity-40"><Check size={18} />{saving ? "Salvando..." : "Simular correção"}</button></div><div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>Leitura OMR:</b> use a folha padronizada acima. O sistema usa os marcadores técnicos e as posições fixas das bolhas para identificar as respostas.</div></div></div></section>;
+  return <section className="mx-auto max-w-5xl"><div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-sm font-bold text-blue-600">CORREÇÃO</p><h2 className="mt-1 text-3xl font-black">{avaliacao.titulo}</h2><p className="mt-2 text-blue-500">{avaliacao.disciplina} • {avaliacao.turmaNome} • {avaliacao.turmaAno}</p></div><button onClick={onBack} className="rounded-xl border bg-white px-4 py-2 text-sm font-bold">Voltar</button></div><div className="grid gap-5 lg:grid-cols-[340px_1fr]"><div className="rounded-3xl border bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h3 className="font-black">1. Selecione o aluno</h3><p className="text-xs text-blue-500">Alunos da turma {avaliacao.turmaNome}</p></div><Users className="text-blue-600" size={20} /></div><div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto">{students.length === 0 ? <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">Não há alunos cadastrados nessa turma.</div> : students.map((student) => <button key={student.id} onClick={() => onSelectStudent(student)} className={`w-full rounded-2xl border p-3 text-left transition ${selectedStudent?.id === student.id ? "border-blue-500 bg-blue-50" : "hover:bg-blue-50"}`}><p className="font-bold">{student.nome}</p><p className="text-xs text-blue-500">{student.turmaNome}</p></button>)}</div></div><div className="rounded-3xl border bg-white p-6 shadow-sm"><p className="text-sm font-bold text-blue-600">2. ESCANEAR GABARITO</p><div className="mt-4 rounded-3xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-8 text-center"><div className="mx-auto grid h-20 w-20 place-items-center rounded-3xl bg-white text-blue-600 shadow-sm"><Camera size={38} /></div><h3 className="mt-5 text-xl font-black">{selectedStudent ? `Aluno: ${selectedStudent.nome}` : "Selecione um aluno primeiro"}</h3><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-blue-500">Depois de selecionar o aluno, abra a câmera para fazer a leitura automática das marcações da folha.</p><button disabled={!selectedStudent} onClick={onOpenCamera} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-40"><Camera size={18} />Abrir câmera</button><button disabled={!selectedStudent || saving} onClick={onSimulate} className="ml-2 mt-5 inline-flex items-center gap-2 rounded-2xl border bg-white px-5 py-3 font-bold disabled:opacity-40"><Check size={18} />{saving ? "Salvando..." : "Simular correção"}</button></div><div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>Leitura OMR:</b> use a folha padronizada acima. O sistema usa os marcadores técnicos e as posições fixas das bolhas para identificar as respostas.</div></div></div></section>;
 }
 
 function Results({ results, avaliacoes, turmas, onExport }: { results: Result[]; avaliacoes: Avaliacao[]; turmas: Turma[]; onExport: () => void }) {
@@ -719,6 +779,6 @@ function Results({ results, avaliacoes, turmas, onExport }: { results: Result[];
     return matchAvaliacao && matchTurma && matchAluno;
   }), [results, avaliacaoId, turmaId, aluno]);
 
-  return <section><div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-sm font-bold text-blue-600">RESULTADOS</p><h2 className="mt-1 text-3xl font-black">Correções registradas</h2><p className="mt-2 text-slate-500">{filtered.length} resultado(s) encontrado(s).</p></div><button onClick={onExport} disabled={!filtered.length} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white disabled:opacity-40"><FileSpreadsheet size={18} />Exportar Excel</button></div><div className="mb-5 grid gap-3 rounded-3xl border bg-white p-4 shadow-sm md:grid-cols-3"><select value={avaliacaoId} onChange={(e) => setAvaliacaoId(e.target.value)} className="rounded-2xl border bg-white px-4 py-3"><option value="">Todas as avaliações</option>{avaliacoes.map((item) => <option key={item.id} value={item.id}>{item.titulo}</option>)}</select><select value={turmaId} onChange={(e) => setTurmaId(e.target.value)} className="rounded-2xl border bg-white px-4 py-3"><option value="">Todas as turmas</option>{turmas.map((item) => <option key={item.id} value={item.id}>{item.nome} — {item.ano}</option>)}</select><input value={aluno} onChange={(e) => setAluno(e.target.value)} className="rounded-2xl border px-4 py-3 outline-none focus:border-blue-500" placeholder="Buscar aluno..." /></div><div className="overflow-hidden rounded-3xl border bg-white shadow-sm">{!filtered.length ? <div className="p-10 text-center text-slate-500">Nenhuma correção encontrada.</div> : <div className="overflow-x-auto"><table className="w-full min-w-[950px] text-sm"><thead className="bg-slate-100"><tr><th className="px-4 py-3 text-left">Aluno</th><th className="px-4 py-3 text-left">Avaliação</th><th className="px-4 py-3 text-left">Turma</th><th className="px-4 py-3">Acertos</th><th className="px-4 py-3">Nota</th></tr></thead><tbody>{filtered.map((result) => <tr key={result.id} className="border-t"><td className="px-4 py-4 font-bold">{result.student}</td><td className="px-4 py-4">{result.avaliacaoNome || "—"}</td><td className="px-4 py-4">{result.turma}</td><td className="px-4 py-4 text-center font-bold">{result.hits}/{result.total}</td><td className="px-4 py-4 text-center font-black text-blue-600">{Number(result.score).toFixed(1)}</td></tr>)}</tbody></table></div>}</div></section>;
+  return <section><div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-sm font-bold text-blue-600">RESULTADOS</p><h2 className="mt-1 text-3xl font-black">Correções registradas</h2><p className="mt-2 text-blue-500">{filtered.length} resultado(s) encontrado(s).</p></div><button onClick={onExport} disabled={!filtered.length} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white disabled:opacity-40"><FileSpreadsheet size={18} />Exportar Excel</button></div><div className="mb-5 grid gap-3 rounded-3xl border bg-white p-4 shadow-sm md:grid-cols-3"><select value={avaliacaoId} onChange={(e) => setAvaliacaoId(e.target.value)} className="rounded-2xl border bg-white px-4 py-3"><option value="">Todas as avaliações</option>{avaliacoes.map((item) => <option key={item.id} value={item.id}>{item.titulo}</option>)}</select><select value={turmaId} onChange={(e) => setTurmaId(e.target.value)} className="rounded-2xl border bg-white px-4 py-3"><option value="">Todas as turmas</option>{turmas.map((item) => <option key={item.id} value={item.id}>{item.nome} — {item.ano}</option>)}</select><input value={aluno} onChange={(e) => setAluno(e.target.value)} className="rounded-2xl border px-4 py-3 outline-none focus:border-blue-500" placeholder="Buscar aluno..." /></div><div className="overflow-hidden rounded-3xl border bg-white shadow-sm">{!filtered.length ? <div className="p-10 text-center text-blue-500">Nenhuma correção encontrada.</div> : <div className="overflow-x-auto"><table className="w-full min-w-[950px] text-sm"><thead className="bg-blue-100"><tr><th className="px-4 py-3 text-left">Aluno</th><th className="px-4 py-3 text-left">Avaliação</th><th className="px-4 py-3 text-left">Turma</th><th className="px-4 py-3">Acertos</th><th className="px-4 py-3">Nota</th></tr></thead><tbody>{filtered.map((result) => <tr key={result.id} className="border-t"><td className="px-4 py-4 font-bold">{result.student}</td><td className="px-4 py-4">{result.avaliacaoNome || "—"}</td><td className="px-4 py-4">{result.turma}</td><td className="px-4 py-4 text-center font-bold">{result.hits}/{result.total}</td><td className="px-4 py-4 text-center font-black text-blue-600">{Number(result.score).toFixed(1)}</td></tr>)}</tbody></table></div>}</div></section>;
 }
 

@@ -1,10 +1,10 @@
-# Corretor Marineide
+# Corretor Gabarito
 
-Sistema personalizado e exclusivo para a professora Marineide.
+Sistema de correção de gabaritos e gerenciamento de notas para professores.
 
 ## Fluxo
 
-1. Marineide cadastra os alunos na aba **Alunos**.
+1. Corretor Gabarito cadastra os alunos na aba **Alunos**.
 2. Pode pesquisar ou retirar alunos.
 3. Cria uma nova avaliação.
 4. Seleciona a turma.

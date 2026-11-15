@@ -1,32 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 :root {
-  font-family:
-    Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #0f172a;
-  background: #f8fafc;
+  font-family: 'DM Sans', 'Segoe UI', sans-serif;
+  color: #172033;
+  background: #f5f7fb;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-weight: 400;
 }
 
-* {
-  box-sizing: border-box;
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: #f5f7fb; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+::selection { background: #dbeafe; color: #123b78; }
+:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+
+.app-shell { background: radial-gradient(ellipse at 12% 0%, rgba(219,234,254,.42), transparent 35%), #f5f7fb; }
+.app-header { background: linear-gradient(110deg, #142744 0%, #1e3a63 100%); border-bottom: 1px solid #263f63; box-shadow: 0 4px 20px rgba(15,23,42,.14); backdrop-filter: blur(16px); }
+.brand-title { color: #ffffff; font-family: 'Manrope', sans-serif; font-weight: 800; letter-spacing: -.045em; line-height: 1.25; }
+.brand-subtitle { display: block; margin-top: 3px; color: #c5d2e5; font-size: 9px; font-weight: 800; letter-spacing: .15em; }
+.desktop-nav { padding: 5px; border: 1px solid #edf0f5; border-radius: 16px; background: #f8fafc; }
+.nav-button { white-space: nowrap; }
+.nav-button svg { flex: 0 0 auto; }
+.nav-button-active { color: #1d4ed8; background: #fff; box-shadow: 0 2px 7px rgba(15,23,42,.09), inset 0 0 0 1px #e7edf7; }
+.mobile-menu-bar { border-top: 1px solid #edf0f5; background: #fff; padding: 10px 14px; }
+.mobile-menu-trigger { color: #fff; background: linear-gradient(135deg,#2456c7,#3679e8); box-shadow: 0 5px 14px rgba(37,99,235,.18); }
+.mobile-nav-item { border: 1px solid #e8edf4; background: #fff; color: #344256; box-shadow: 0 2px 5px rgba(15,23,42,.025); }
+.app-main { min-height: calc(100vh - 82px); }
+
+/* Acabamento consistente dos componentes da aplicação */
+.app-main h1, .app-main h2, .app-main h3 { font-family: 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.035em; color: #172033; }
+.app-main button { transition: transform .16s ease, box-shadow .16s ease, background-color .16s ease; }
+.app-main button:active { transform: translateY(1px); }
+.app-main input, .app-main select, .app-main textarea { border-color: #dfe5ee; color: #263449; background-color: #fff; }
+.app-main input:focus, .app-main select:focus, .app-main textarea:focus { border-color: #7aa7f8; box-shadow: 0 0 0 3px rgba(59,130,246,.10); outline: none; }
+.app-main .rounded-3xl.border, .app-main .rounded-2xl.border { border-color: #e6ebf2; }
+.scan-reader video { border-radius: 18px; }
+.scan-reader__dashboard_section_csr button { border-radius: 12px; }
+
+@media (max-width: 767px) {
+  .app-main { padding-top: 22px; }
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-}
-
-button,
-input {
-  font: inherit;
-}
-
-.scan-reader video {
-  border-radius: 18px;
-}
-
-.scan-reader__dashboard_section_csr button {
-  border-radius: 12px;
-}
+/* Título principal do painel: manter branco sobre o banner azul. */
+.app-main .hero-title { color: #ffffff !important; }

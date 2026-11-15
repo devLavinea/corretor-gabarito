@@ -289,7 +289,7 @@ function downloadBlob(blob: Blob, filename: string) {
 export async function downloadGabaritoPng() {
   const blob = await svgToPngBlob(createGabaritoSvg(), 2);
 
-  downloadBlob(blob, "gabarito-marineide-horizontal.png");
+  downloadBlob(blob, "gabarito-horizontal.png");
 }
 
 /**
@@ -342,7 +342,7 @@ export async function downloadGabaritoPdf() {
     "FAST",
   );
 
-  pdf.save("gabarito-marineide-horizontal.pdf");
+  pdf.save("gabarito-horizontal.pdf");
 }
 
 /**
@@ -431,7 +431,7 @@ export async function downloadGabaritoWord() {
 
   const blob = await Packer.toBlob(document);
 
-  downloadBlob(blob, "gabarito-marineide-retrato.docx");
+  downloadBlob(blob, "gabarito-retrato.docx");
 }
 
 /**
@@ -443,7 +443,7 @@ export default function GabaritoGenerator() {
   const preview = useMemo(() => svgToDataUrl(createGabaritoSvg()), []);
 
   return (
-    <div className="rounded-3xl bg-slate-50 p-5">
+    <div className="rounded-3xl bg-blue-50 p-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="text-sm font-bold text-blue-600">MODELO OMR</p>
@@ -452,7 +452,7 @@ export default function GabaritoGenerator() {
             Gabarito no final da página
           </h3>
 
-          <p className="mt-1 max-w-xl text-sm leading-6 text-slate-500">
+          <p className="mt-1 max-w-xl text-sm leading-6 text-blue-500">
             Página em retrato, com o gabarito horizontal posicionado na parte
             inferior. São 10 questões, com alternativas A–D, sendo 01–05 no
             bloco esquerdo e 06–10 no bloco direito.
@@ -463,7 +463,7 @@ export default function GabaritoGenerator() {
           <button
             type="button"
             onClick={() => void downloadGabaritoPng()}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-bold shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-bold shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50"
           >
             <FileImage size={16} />
             PNG
@@ -481,7 +481,7 @@ export default function GabaritoGenerator() {
           <button
             type="button"
             onClick={() => void downloadGabaritoWord()}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-bold shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-bold shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50"
           >
             <FileType size={16} />
             Word
@@ -497,7 +497,7 @@ export default function GabaritoGenerator() {
         />
       </div>
 
-      <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+      <div className="mt-3 flex items-center gap-2 text-xs text-blue-500">
         <Download size={14} />
         Imprima em escala 100%, sem "ajustar à página", para preservar as
         posições utilizadas pelo leitor OMR.

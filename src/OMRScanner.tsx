@@ -1485,7 +1485,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                   type="button"
                   onClick={() => void toggleFlash()}
                   disabled={!flashSupported}
-                  className={`grid h-11 w-11 place-items-center rounded-full backdrop-blur-md ${flashOn ? "bg-amber-300 text-slate-900" : "bg-black/60 text-white disabled:opacity-40"}`}
+                  className={`grid h-11 w-11 place-items-center rounded-full backdrop-blur-md ${flashOn ? "bg-amber-300 text-blue-900" : "bg-black/60 text-white disabled:opacity-40"}`}
                   aria-label="Ativar flash"
                 >
                   <span className="text-lg">⚡</span>
@@ -1576,14 +1576,14 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
              RESULTADO
           ================================================== */
 
-          <div className="flex h-full flex-col bg-slate-100">
+          <div className="flex h-full flex-col bg-blue-100">
             <div className="flex items-center justify-between bg-white px-4 py-4 shadow-sm">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-blue-600">
                   Resultado
                 </p>
 
-                <h2 className="text-lg font-black text-slate-900">
+                <h2 className="text-lg font-black text-blue-900">
                   Leitura do gabarito
                 </h2>
               </div>
@@ -1591,7 +1591,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
               <button
                 type="button"
                 onClick={close}
-                className="grid h-10 w-10 place-items-center rounded-xl hover:bg-slate-100"
+                className="grid h-10 w-10 place-items-center rounded-xl hover:bg-blue-100"
                 aria-label="Fechar resultado"
               >
                 <X size={20} />
@@ -1619,11 +1619,11 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                     <div className="rounded-3xl bg-white p-5 shadow-sm">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h3 className="font-black text-slate-900">
+                          <h3 className="font-black text-blue-900">
                             Respostas identificadas
                           </h3>
 
-                          <p className="mt-1 text-xs text-slate-500">
+                          <p className="mt-1 text-xs text-blue-500">
                             Confira antes de confirmar.
                           </p>
                         </div>
@@ -1772,7 +1772,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                         <button
                           type="button"
                           onClick={reset}
-                          className="flex items-center justify-center gap-2 rounded-2xl border bg-white py-3 font-bold text-slate-700"
+                          className="flex items-center justify-center gap-2 rounded-2xl border bg-white py-3 font-bold text-blue-700"
                         >
                           <RotateCcw size={18} />
                           Fotografar novamente
@@ -1792,7 +1792,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border bg-white p-4 text-sm text-slate-600">
+                    <div className="rounded-2xl border bg-white p-4 text-sm text-blue-600">
                       <div className="flex gap-3">
                         <ZoomIn
                           size={18}

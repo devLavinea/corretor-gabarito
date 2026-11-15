@@ -1,54 +1,24 @@
-# Firebase — Corretor Marineide
+# Configuração Firebase — Corretor Gabarito
 
-## 1. Configurar o aplicativo Web
+## Authentication
+No Firebase Console > Authentication > Método de login, mantenha ativados:
+- E-mail/senha
+- Google
 
-No Firebase Console, abra:
+O login anônimo não é mais usado pelo aplicativo.
 
-**Configurações do projeto → Seus aplicativos → Aplicativo da Web**
+## Professores autorizados
+Na coleção `professores`, cada professor deve ter um documento com os campos:
+- `Email`: e-mail da conta Google ou e-mail que usará no login (mesmo e-mail; comparação sem distinção de maiúsculas/minúsculas no app)
+- `Nome`: nome completo que aparecerá na saudação
 
-Os dados usados pelo aplicativo ficam em:
+Exemplo: `Email: lavinea2411@gmail.com`, `Nome: Lavinea Souza Santos`.
 
-```text
-src/firebase.ts
-```
+O documento pode ter ID aleatório. Após o primeiro login autorizado, o app cria também um documento de vínculo com ID igual ao UID do Firebase Authentication.
 
-## 2. Ativar autenticação anônima
+## Regras
+Copie o conteúdo de `firestore.rules` para Firebase Console > Firestore Database > Regras e publique.
+As regras bloqueiam usuários sem vínculo. Professores não podem alterar/excluir a lista de autorização; o vínculo de UID é criado pelo app no primeiro acesso validado.
 
-Abra:
-
-**Authentication → Sign-in method → Anonymous → Ativar**
-
-A professora não precisa criar uma conta. O sistema inicia uma sessão anônima para acessar o Firestore.
-
-## 3. Criar o Firestore
-
-Abra **Firestore Database → Criar banco de dados**.
-
-As coleções são criadas conforme os dados são cadastrados. O aplicativo utiliza:
-
-- `turmas`
-- `alunos`
-- `avaliacoes`
-- `resultados`
-- `notas`
-- `configuracoes`
-
-## 4. Regras do Firestore
-
-O arquivo `firestore.rules` está incluído no projeto. A versão atual contempla `alunos`, `resultados` e `avaliacoes`.
-
-Como o aplicativo também utiliza `turmas`, `notas` e `configuracoes`, confirme que essas coleções também estão contempladas nas regras publicadas antes de usar o sistema em produção.
-
-**Não use `allow read, write: if true` em produção.**
-
-## 5. Se aparecer `auth/operation-not-allowed`
-
-Isso significa que o login anônimo ainda não foi ativado. Volte ao passo 2.
-
-## 6. Se aparecer `permission-denied`
-
-Verifique se:
-
-1. a autenticação anônima está ativa;
-2. as regras publicadas estão atualizadas;
-3. as coleções utilizadas pelo aplicativo estão contempladas nas regras.
+## Observação sobre cadastro
+A opção “Cadastre-se” cria a conta no Authentication, mas só libera o sistema se o e-mail já estiver na coleção `professores`. Se não estiver, o app encerra a sessão e informa que o e-mail não está autorizado.

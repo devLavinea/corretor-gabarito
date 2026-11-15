@@ -1,0 +1,16 @@
+ATUALIZAÇÃO VISUAL E DE SESSÃO — CORRETOR GABARITO
+
+Alterações:
+- Logo circular nova aplicada na tela de login e no cabeçalho principal.
+- Logo usada também como ícone do navegador, atalho e ícone PWA (192x192 e 512x512).
+- Paleta visual harmonizada com azul e branco como cores principais, com amarelo e verde como cores de apoio.
+- Autenticação configurada explicitamente com persistência local do Firebase Auth.
+- O vínculo do professor previamente autorizado é armazenado localmente para permitir que a sessão continue reconhecida neste navegador quando a conexão cair. A autorização dos dados continua sendo aplicada pelas regras do Firestore.
+- O botão “Sair” encerra a sessão e remove o vínculo local salvo.
+
+Observação:
+A persistência mantém a sessão entre visitas e fechamentos do navegador neste mesmo perfil/dispositivo, até a pessoa clicar em “Sair” ou limpar os dados do navegador. O uso dos dados do sistema ainda depende de conexão com a internet e das regras do Firebase/Firestore.
+
+Para instalar dependências e gerar a versão de produção:
+  npm install
+  npm run build

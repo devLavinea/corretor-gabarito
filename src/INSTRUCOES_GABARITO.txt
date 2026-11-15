@@ -1,4 +1,4 @@
-CORRETOR MARINEIDE — ABA GABARITO
+CORRETOR GABARITO — ABA GABARITO
 
 Foi adicionada uma aba própria chamada Gabarito no menu do sistema.
 

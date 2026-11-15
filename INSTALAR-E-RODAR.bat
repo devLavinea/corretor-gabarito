@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 echo ==============================================
-echo     CORRETOR MARINEIDE - INSTALACAO
+echo     CORRETOR GABARITO - INSTALACAO
 echo ==============================================
 echo.
 where node >nul 2>nul
@@ -24,6 +24,6 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Iniciando o Corretor Marineide...
+echo Iniciando o Corretor Gabarito...
 call npm run dev
 pause

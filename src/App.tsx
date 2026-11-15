@@ -7,7 +7,10 @@ import {
 } from "react";
 
 import {
-  AlertTriangle,
+  ClipboardList,
+  Settings2,
+  ChartNoAxesCombined,
+  LayoutDashboard,
   BookOpen,
   Camera,
   Check,
@@ -17,7 +20,6 @@ import {
   LockKeyhole,
   FileText,
   GraduationCap,
-  Home as HomeIcon,
   Plus,
   Search,
   Tag,
@@ -35,9 +37,21 @@ import {
   setDoc,
   getDocs,
   serverTimestamp,
+  query,
+  where,
 } from "firebase/firestore";
 
-import { signInAnonymously } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  signOut,
+  onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
+  type User,
+} from "firebase/auth";
 
 import { db, auth } from "./firebase";
 import { exportResults } from "./exportExcel";
@@ -154,7 +168,7 @@ const alternatives: Answer[] = ["A", "B", "C", "D"];
 // APP
 // ======================================================
 
-export default function App() {
+function MainApp() {
   const [page, setPage] = useState<Page>("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -263,7 +277,6 @@ export default function App() {
   // FIREBASE
   // ====================================================
 
-  const [firebaseReady, setFirebaseReady] = useState(false);
   const [error, setError] = useState("");
 
   // ====================================================
@@ -273,10 +286,6 @@ export default function App() {
   useEffect(() => {
     const start = async () => {
       try {
-        await signInAnonymously(auth);
-
-        setFirebaseReady(true);
-
         await Promise.all([
           loadTurmas(),
           loadStudents(),
@@ -288,16 +297,7 @@ export default function App() {
       } catch (err) {
         console.error("ERRO FIREBASE:", err);
 
-        const firebaseError = err as {
-          code?: string;
-          message?: string;
-        };
-
-        setError(
-          `Erro Firebase: ${firebaseError.code ?? "desconhecido"} — ${
-            firebaseError.message ?? "Não foi possível conectar ao Firebase."
-          }`,
-        );
+        // Não exibe detalhes técnicos de conexão na abertura do sistema.
       }
     };
 
@@ -329,7 +329,7 @@ export default function App() {
     } catch (err) {
       console.error("Erro ao carregar turmas:", err);
 
-      setError("Não foi possível carregar as turmas.");
+      // Mantém o painel utilizável mesmo quando a leitura inicial falhar.
     }
   }
 
@@ -366,7 +366,7 @@ export default function App() {
     } catch (err) {
       console.error("Erro ao carregar alunos:", err);
 
-      setError("Não foi possível carregar os alunos.");
+      // Mantém o painel utilizável mesmo quando a leitura inicial falhar.
     } finally {
       setLoadingStudents(false);
     }
@@ -416,7 +416,9 @@ export default function App() {
     } catch (err) {
       console.error("Erro ao carregar avaliações:", err);
 
-      setError("Não foi possível carregar as avaliações.");
+      // Falhas pontuais de leitura não devem interromper a experiência
+      // nem exibir alertas ao abrir o painel. A lista permanece vazia.
+
     }
   }
 
@@ -437,7 +439,7 @@ export default function App() {
     } catch (err) {
       console.error("Erro ao carregar resultados:", err);
 
-      setError("Não foi possível carregar os resultados.");
+      // Mantém o painel utilizável mesmo quando a leitura inicial falhar.
     }
   }
 
@@ -1269,92 +1271,80 @@ export default function App() {
   // ====================================================
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-30 border-b bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
+    <div className="app-shell min-h-screen text-slate-800">
+      <header className="app-header sticky top-0 z-30">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-4 py-3.5 lg:px-7">
           <button
             onClick={() => setPage("home")}
             className="flex items-center gap-3 text-left"
           >
-            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-600 text-white shadow-sm">
-              <GraduationCap size={23} />
-            </span>
+            <img src="/logo-corretor.png" alt="Logo Corretor Gabarito" className="h-12 w-12 rounded-2xl object-cover shadow-md ring-1 ring-slate-200" />
 
             <span>
-              <b className="block text-lg">Corretor Marineide</b>
+              <b className="brand-title block text-[17px]">Corretor Gabarito</b>
 
-              <small className="text-slate-500">
-                Sistema exclusivo da professora
-              </small>
+              <small className="brand-subtitle">GESTÃO DE AVALIAÇÕES</small>
             </span>
           </button>
 
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav className="desktop-nav hidden items-center gap-1.5 md:flex">
             <NavButton
               active={page === "home"}
-              icon={<HomeIcon size={17} />}
+              icon={<LayoutDashboard size={18} strokeWidth={1.9} />}
               label="Início"
               onClick={() => setPage("home")}
             />
 
             <NavButton
               active={page === "settings"}
-              icon={<GraduationCap size={17} />}
+              icon={<Settings2 size={18} strokeWidth={1.9} />}
               label="Configurações"
               onClick={() => setPage("settings")}
             />
 
             <NavButton
               active={page === "students"}
-              icon={<Users size={17} />}
+              icon={<Users size={18} strokeWidth={1.9} />}
               label="Alunos"
               onClick={() => setPage("students")}
             />
 
             <NavButton
               active={page === "gabarito"}
-              icon={<FileText size={17} />}
+              icon={<ClipboardList size={18} strokeWidth={1.9} />}
               label="Gabarito"
               onClick={() => setPage("gabarito")}
             />
             <NavButton
               active={page === "avaliacoes"}
-              icon={<BookOpen size={17} />}
+              icon={<BookOpen size={18} strokeWidth={1.9} />}
               label="Avaliações"
               onClick={() => setPage("avaliacoes")}
             />
 
             <NavButton
               active={page === "setup" || page === "scan"}
-              icon={<BookOpen size={17} />}
+              icon={<BookOpen size={18} strokeWidth={1.9} />}
               label="Nova avaliação"
               onClick={() => setPage("setup")}
             />
 
             <NavButton
               active={page === "grades"}
-              icon={<FileSpreadsheet size={17} />}
+              icon={<ChartNoAxesCombined size={18} strokeWidth={1.9} />}
               label="Cadastrar notas"
               onClick={() => setPage("grades")}
             />
           </nav>
 
-          <span
-            className={`hidden rounded-full px-3 py-1 text-xs font-bold sm:inline-flex ${
-              firebaseReady
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-amber-50 text-amber-700"
-            }`}
-          >
-            {firebaseReady ? "Firebase conectado" : "Conectando..."}
-          </span>
+
         </div>
 
-        <div className="border-t bg-white px-3 py-2 md:hidden">
+        <div className="mobile-menu-bar md:hidden">
           <button
             type="button"
             onClick={() => setMobileMenuOpen((value) => !value)}
-            className="flex w-full items-center justify-between rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white shadow-sm"
+            className="mobile-menu-trigger flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-bold"
           >
             <span>Menu</span>
             <ChevronDown
@@ -1365,24 +1355,24 @@ export default function App() {
           {mobileMenuOpen && (
             <div className="mt-2 grid grid-cols-2 gap-2 pb-1">
               {[
-                ["Início", () => setPage("home"), <HomeIcon size={18} />],
+                ["Início", () => setPage("home"), <LayoutDashboard size={18} />],
                 [
                   "Configurações",
                   () => setPage("settings"),
-                  <GraduationCap size={18} />,
+                  <Settings2 size={18} />,
                 ],
                 ["Alunos", () => setPage("students"), <Users size={18} />],
-                ["Gabarito", () => setPage("gabarito"), <FileText size={18} />],
+                ["Gabarito", () => setPage("gabarito"), <ClipboardList size={18} />],
                 [
                   "Avaliações",
                   () => setPage("avaliacoes"),
                   <BookOpen size={18} />,
                 ],
-                ["Avaliação", () => setPage("setup"), <BookOpen size={18} />],
+                ["Nova avaliação", () => setPage("setup"), <BookOpen size={18} />],
                 [
                   "Cadastrar notas",
                   () => setPage("grades"),
-                  <FileSpreadsheet size={18} />,
+                  <ChartNoAxesCombined size={18} />,
                 ],
               ].map(([label, action, icon]) => (
                 <button
@@ -1391,7 +1381,7 @@ export default function App() {
                     (action as () => void)();
                     setMobileMenuOpen(false);
                   }}
-                  className="flex items-center gap-3 rounded-2xl border bg-white p-3 text-left text-sm font-bold"
+                  className="mobile-nav-item flex items-center gap-3 rounded-xl p-3 text-left text-sm font-semibold"
                 >
                   {icon as ReactNode}
                   <span>{String(label)}</span>
@@ -1402,11 +1392,9 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="app-main mx-auto max-w-[1440px] px-4 py-7 lg:px-7 lg:py-9">
         {error && (
           <div className="mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-            <AlertTriangle className="mt-0.5 shrink-0" size={18} />
-
             <div className="flex-1">{error}</div>
 
             <button onClick={() => setError("")}>
@@ -1473,7 +1461,7 @@ export default function App() {
 
               <h2 className="mt-1 text-3xl font-black">Folha de respostas</h2>
 
-              <p className="mt-2 max-w-3xl text-slate-500">
+              <p className="mt-2 max-w-3xl text-blue-500">
                 Este é o modelo de folha de respostas utilizado pelo leitor OMR.
                 Imprima e entregue aos alunos.
               </p>
@@ -1601,10 +1589,12 @@ function NavButton({
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold transition ${
+      aria-current={active ? "page" : undefined}
+      title={label}
+      className={`nav-button inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-[13px] font-semibold transition-all ${
         active
-          ? "bg-blue-50 text-blue-700"
-          : "text-slate-600 hover:bg-slate-100"
+          ? "nav-button-active"
+          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
       }`}
     >
       {icon}
@@ -1642,11 +1632,11 @@ function Home({
     <section className="space-y-6">
       <div className="rounded-3xl bg-blue-600 p-7 text-white shadow-lg md:p-10">
         <p className="text-sm font-bold uppercase tracking-wider text-blue-100">
-          Sistema exclusivo
+          Plataforma para professores
         </p>
 
-        <h1 className="mt-2 text-3xl font-black md:text-5xl">
-          Corretor da professora Marineide
+        <h1 className="hero-title mt-2 text-3xl font-black md:text-5xl">
+          Corretor Gabarito
         </h1>
 
         <p className="mt-4 max-w-2xl leading-7 text-blue-100">
@@ -1750,13 +1740,13 @@ function StatCard({
   return (
     <button
       onClick={onClick}
-      className="rounded-3xl border bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+      className="rounded-3xl border bg-white p-5 text-left shadow-sm transition hover:-tranblue-y-0.5 hover:shadow-md"
     >
       <span className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600">
         {icon}
       </span>
 
-      <p className="mt-5 text-sm font-bold text-slate-500">{title}</p>
+      <p className="mt-5 text-sm font-bold text-blue-500">{title}</p>
 
       <p className="mt-1 text-3xl font-black">{value}</p>
     </button>
@@ -1782,13 +1772,13 @@ function QuickCard({
 }) {
   return (
     <div className="rounded-3xl border bg-white p-6 shadow-sm">
-      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-blue-600">
+      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-100 text-blue-600">
         {icon}
       </span>
 
       <h2 className="mt-5 text-xl font-black">{title}</h2>
 
-      <p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">{text}</p>
+      <p className="mt-2 min-h-12 text-sm leading-6 text-blue-500">{text}</p>
 
       <button
         onClick={onClick}
@@ -1857,7 +1847,7 @@ function ConfiguracoesPage({
       <div>
         <p className="text-sm font-bold text-blue-600">CONFIGURAÇÕES</p>
         <h2 className="mt-1 text-3xl font-black">Configurações do sistema</h2>
-        <p className="mt-2 text-slate-500">
+        <p className="mt-2 text-blue-500">
           Cadastre aqui as turmas, disciplinas e modelos de avaliação que serão
           usados nas correções.
         </p>
@@ -1871,7 +1861,7 @@ function ConfiguracoesPage({
             </span>
             <div>
               <h3 className="font-black">Turmas</h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-blue-500">
                 Adicione e organize suas turmas.
               </p>
             </div>
@@ -1915,7 +1905,7 @@ function ConfiguracoesPage({
                 >
                   <div>
                     <p className="font-black">{turma.nome}</p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-blue-500">
                       {turma.ano} • {count} aluno(s)
                     </p>
                   </div>
@@ -1930,7 +1920,7 @@ function ConfiguracoesPage({
               );
             })}
             {!turmas.length && (
-              <p className="rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-500">
+              <p className="rounded-2xl bg-blue-50 p-4 text-center text-sm text-blue-500">
                 Nenhuma turma cadastrada.
               </p>
             )}
@@ -1944,7 +1934,7 @@ function ConfiguracoesPage({
             </span>
             <div>
               <h3 className="font-black">Disciplinas</h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-blue-500">
                 Essas opções aparecerão ao criar uma avaliação.
               </p>
             </div>
@@ -1971,7 +1961,7 @@ function ConfiguracoesPage({
             {disciplinas.map((item) => (
               <div
                 key={item}
-                className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold"
+                className="flex items-center gap-2 rounded-xl bg-blue-100 px-3 py-2 text-sm font-bold"
               >
                 <span>{item}</span>
                 <button
@@ -1992,7 +1982,7 @@ function ConfiguracoesPage({
             </span>
             <div>
               <h3 className="font-black">Referências de colunas</h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-blue-500">
                 Cadastre aqui as referências fixas que poderão ser usadas nas
                 avaliações.
               </p>
@@ -2027,7 +2017,7 @@ function ConfiguracoesPage({
             {referencias.map((item) => (
               <div
                 key={item}
-                className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold"
+                className="flex items-center gap-2 rounded-xl bg-blue-100 px-3 py-2 text-sm font-bold"
               >
                 <span>{item}</span>
                 <button
@@ -2049,7 +2039,7 @@ function ConfiguracoesPage({
             </span>
             <div>
               <h3 className="font-black">Avaliações e referências</h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-blue-500">
                 Cadastre o nome da avaliação, a nota máxima e a quantidade de
                 questões vinculados a uma referência.
               </p>
@@ -2066,7 +2056,7 @@ function ConfiguracoesPage({
               );
               setAvaliacaoNome("");
             }}
-            className="mt-5 grid gap-4 rounded-2xl bg-slate-50 p-4 md:grid-cols-[180px_1fr_150px_210px_auto]"
+            className="mt-5 grid gap-4 rounded-2xl bg-blue-50 p-4 md:grid-cols-[180px_1fr_150px_210px_auto]"
           >
             <label className="block">
               <span className="mb-2 block text-sm font-bold">Referência</span>
@@ -2136,7 +2126,7 @@ function ConfiguracoesPage({
                       {item.referencia}
                     </p>
                     <p className="font-black">{item.nome}</p>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 text-sm text-blue-500">
                       Nota máxima: {item.nota} • {item.questoes} questões
                     </p>
                   </div>
@@ -2206,10 +2196,10 @@ function Students({
         <p className="text-sm font-bold text-blue-600">MEUS ALUNOS</p>
 
         <h2 className="mt-1 text-3xl font-black">
-          Alunos da professora Marineide
+          Meus alunos
         </h2>
 
-        <p className="mt-2 text-slate-500">
+        <p className="mt-2 text-blue-500">
           Cadastre cada aluno já vinculado à sua turma.
         </p>
       </div>
@@ -2227,7 +2217,7 @@ function Students({
             <div>
               <h3 className="font-black">Cadastrar aluno</h3>
 
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-blue-500">
                 Escolha uma turma já cadastrada
               </p>
             </div>
@@ -2289,7 +2279,7 @@ function Students({
             <div>
               <h3 className="text-xl font-black">Lista de alunos</h3>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-blue-500">
                 {students.length}
                 {" aluno(s) encontrado(s)"}
               </p>
@@ -2313,7 +2303,7 @@ function Students({
               <div className="relative flex-1">
                 <Search
                   size={18}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  className="absolute left-3 top-1/2 -tranblue-y-1/2 text-blue-400"
                 />
 
                 <input
@@ -2328,12 +2318,12 @@ function Students({
 
           <div className="mt-5 space-y-2">
             {loading ? (
-              <p className="rounded-2xl bg-slate-50 p-5 text-center text-sm text-slate-500">
+              <p className="rounded-2xl bg-blue-50 p-5 text-center text-sm text-blue-500">
                 Carregando alunos...
               </p>
             ) : students.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-8 text-center">
-                <Users className="mx-auto text-slate-300" size={34} />
+                <Users className="mx-auto text-blue-300" size={34} />
 
                 <p className="mt-3 font-bold">Nenhum aluno encontrado</p>
               </div>
@@ -2346,7 +2336,7 @@ function Students({
                   <div className="min-w-0">
                     <p className="truncate font-black">{student.nome}</p>
 
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 text-sm text-blue-500">
                       {student.turmaNome || student.turma || "Sem turma"}
                     </p>
                   </div>
@@ -2418,7 +2408,7 @@ function AvaliacoesPage({
       <div className="mb-6">
         <p className="text-sm font-bold text-blue-600">AVALIAÇÕES</p>
         <h2 className="mt-1 text-3xl font-black">Avaliações cadastradas</h2>
-        <p className="mt-2 text-slate-500">
+        <p className="mt-2 text-blue-500">
           Clique em uma avaliação para visualizar as respostas de cada aluno.
         </p>
       </div>
@@ -2435,7 +2425,7 @@ function AvaliacoesPage({
       )}
       <div className="grid gap-4 md:grid-cols-2">
         {avaliacoes.length === 0 ? (
-          <div className="rounded-3xl border bg-white p-8 text-center text-slate-500 md:col-span-2">
+          <div className="rounded-3xl border bg-white p-8 text-center text-blue-500 md:col-span-2">
             Nenhuma avaliação cadastrada.
           </div>
         ) : (
@@ -2449,7 +2439,7 @@ function AvaliacoesPage({
                   <p className="font-black">
                     {item.nomeAtividade || item.titulo} - {item.disciplina}
                   </p>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <p className="mt-1 text-sm text-blue-500">
                     {item.bimestre || "Bimestre não informado"} •{" "}
                     {item.turmaNome}
                   </p>
@@ -2487,7 +2477,7 @@ function AvaliacoesPage({
                 {item.gabarito.map((answer, index) => (
                   <span
                     key={index}
-                    className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold"
+                    className="rounded-lg bg-blue-100 px-2 py-1 text-xs font-bold"
                   >
                     {index + 1}:{answer}
                   </span>
@@ -2495,7 +2485,7 @@ function AvaliacoesPage({
               </div>
               {expandedId === item.id && (
                 <div className="mt-5 overflow-hidden rounded-2xl border">
-                  <div className="bg-slate-100 px-4 py-3 text-sm font-black">
+                  <div className="bg-blue-100 px-4 py-3 text-sm font-black">
                     Respostas dos alunos
                   </div>
                   {students
@@ -2512,7 +2502,7 @@ function AvaliacoesPage({
                             <div>
                               <b>{student.nome}</b>
 
-                              <div className="text-xs text-slate-500">
+                              <div className="text-xs text-blue-500">
                                 {result
                                   ? `${result.hits}/${result.total} acertos • Nota ${Number(result.score).toFixed(1)}`
                                   : "Ainda não corrigida"}
@@ -2558,7 +2548,7 @@ function AvaliacoesPage({
               </div>
               <button
                 onClick={() => setEditing(null)}
-                className="rounded-xl p-2 hover:bg-slate-100"
+                className="rounded-xl p-2 hover:bg-blue-100"
               >
                 <X size={20} />
               </button>
@@ -2567,7 +2557,7 @@ function AvaliacoesPage({
               {editing.gabarito.map((answer, index) => (
                 <label
                   key={index}
-                  className="rounded-2xl border bg-slate-50 p-3"
+                  className="rounded-2xl border bg-blue-50 p-3"
                 >
                   <span className="text-sm font-black">
                     Questão {index + 1}
@@ -2640,6 +2630,7 @@ function ReviewPage({
     ((hits / Math.max(total, 1)) * (avaliacao.notaMaxima ?? 10)).toFixed(2),
   );
   const perfect = confidence >= 0.999 && answers.length >= total;
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   return (
     <section className="mx-auto max-w-5xl">
       <div className="mb-6 flex items-end justify-between gap-4">
@@ -2648,7 +2639,7 @@ function ReviewPage({
             RESULTADO DA LEITURA
           </p>
           <h2 className="mt-1 text-3xl font-black">Confira antes de salvar</h2>
-          <p className="mt-2 text-slate-500">
+          <p className="mt-2 text-blue-500">
             {student.nome} • {avaliacao.nomeAtividade || avaliacao.titulo} -{" "}
             {avaliacao.disciplina}
           </p>
@@ -2662,14 +2653,14 @@ function ReviewPage({
       </div>
       <div className="grid gap-5 md:grid-cols-[220px_1fr]">
         <div className="rounded-3xl border bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Nota</p>
+          <p className="text-sm text-blue-500">Nota</p>
           <div className="mt-2 text-5xl font-black text-blue-600">
             {score.toFixed(2)}
           </div>
           <p className="mt-2 font-bold">
             {hits}/{total} acertos
           </p>
-          <p className="mt-4 text-sm text-slate-500">
+          <p className="mt-4 text-sm text-blue-500">
             Leitura: {Math.round(confidence * 100)}%
           </p>
         </div>
@@ -2677,8 +2668,8 @@ function ReviewPage({
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-black">Respostas identificadas</h3>
-              <p className="text-sm text-slate-500">
-                A professora pode editar qualquer resposta.
+              <p className="text-sm text-blue-500">
+                A professor(a) pode editar qualquer resposta.
               </p>
             </div>
           </div>
@@ -2691,18 +2682,19 @@ function ReviewPage({
           )}
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
             {answers.slice(0, total).map((answer, index) => (
-              <label key={index} className="rounded-2xl border bg-slate-50 p-3">
-                <span className="text-sm font-black">Questão {index + 1}</span>
-                <select
-                  value={answer}
-                  onChange={(e) => onChange(index, e.target.value as Answer)}
-                  className="mt-2 w-full rounded-xl border bg-white px-2 py-2 font-bold"
-                >
-                  {alternatives.map((a) => (
-                    <option key={a}>{a}</option>
-                  ))}
-                </select>
-              </label>
+              <button
+                type="button"
+                key={index}
+                onClick={() => setEditingIndex(index)}
+                aria-label={`Editar questão ${index + 1}, resposta ${answer}`}
+                className="rounded-2xl border border-blue-200 bg-blue-50 p-3 text-left transition hover:border-blue-400 hover:bg-blue-50"
+              >
+                <span className="block text-sm font-black">Questão {index + 1}</span>
+                <span className="mt-2 flex h-12 items-center justify-center rounded-xl border-2 border-blue-200 bg-white text-2xl font-black text-blue-700">
+                  {answer}
+                </span>
+                <span className="mt-1 block text-center text-xs text-blue-500">Toque para editar</span>
+              </button>
             ))}
           </div>
           <button
@@ -2714,6 +2706,53 @@ function ReviewPage({
           </button>
         </div>
       </div>
+
+      {editingIndex !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-blue-950/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Editar resposta da questão ${editingIndex + 1}`}
+          onClick={() => setEditingIndex(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-5 text-center">
+              <p className="text-sm font-bold text-blue-600">EDITAR RESPOSTA</p>
+              <h3 className="mt-1 text-2xl font-black">Questão {editingIndex + 1}</h3>
+              <p className="mt-1 text-sm text-blue-500">Selecione a alternativa correta</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {alternatives.map((alternative) => (
+                <button
+                  type="button"
+                  key={alternative}
+                  onClick={() => {
+                    onChange(editingIndex, alternative);
+                    setEditingIndex(null);
+                  }}
+                  className={`flex h-20 items-center justify-center rounded-2xl border-2 text-3xl font-black transition ${
+                    answers[editingIndex] === alternative
+                      ? "border-blue-600 bg-blue-600 text-white shadow-lg"
+                      : "border-blue-200 bg-blue-50 text-blue-800 hover:border-blue-400 hover:bg-blue-50"
+                  }`}
+                >
+                  {alternative}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setEditingIndex(null)}
+              className="mt-4 w-full rounded-xl border py-3 font-bold text-blue-600"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -2763,7 +2802,7 @@ function Setup({
       <div className="mb-6">
         <p className="text-sm font-bold text-blue-600">NOVA AVALIAÇÃO</p>
         <h2 className="mt-1 text-3xl font-black">Preparar avaliação</h2>
-        <p className="mt-2 text-slate-500">
+        <p className="mt-2 text-blue-500">
           Selecione o nome da avaliação cadastrado nas configurações e informe o
           gabarito oficial.
         </p>
@@ -2785,7 +2824,7 @@ function Setup({
                 </option>
               ))}
             </select>
-            <span className="mt-1 block text-xs text-slate-500">
+            <span className="mt-1 block text-xs text-blue-500">
               Selecione o nome da avaliação cadastrado nas configurações.
             </span>
           </label>
@@ -2794,9 +2833,9 @@ function Setup({
             <input
               readOnly
               value={selected?.referencia ?? "—"}
-              className="w-full cursor-not-allowed rounded-2xl border bg-slate-100 px-4 py-3 font-bold"
+              className="w-full cursor-not-allowed rounded-2xl border bg-blue-100 px-4 py-3 font-bold"
             />
-            <span className="mt-1 block text-xs text-slate-500">
+            <span className="mt-1 block text-xs text-blue-500">
               Referência fixa da coluna na planilha. Ela não pode ser alterada
               nesta tela.
             </span>
@@ -2806,7 +2845,7 @@ function Setup({
             <input
               readOnly
               value={selected?.nota ?? "—"}
-              className="w-full cursor-not-allowed rounded-2xl border bg-slate-100 px-4 py-3 font-bold"
+              className="w-full cursor-not-allowed rounded-2xl border bg-blue-100 px-4 py-3 font-bold"
             />
           </label>
           <label>
@@ -2860,7 +2899,7 @@ function Setup({
         <div>
           <div className="mb-3 flex items-center justify-between">
             <span className="text-sm font-bold">Gabarito oficial</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">
+            <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold">
               {selected?.questoes ?? keyAnswers.length} questões
             </span>
           </div>
@@ -2868,7 +2907,7 @@ function Setup({
             {keyAnswers
               .slice(0, selected?.questoes ?? keyAnswers.length)
               .map((answer, index) => (
-                <div key={index} className="rounded-2xl border bg-slate-50 p-3">
+                <div key={index} className="rounded-2xl border bg-blue-50 p-3">
                   <span className="text-sm font-black">
                     {String(index + 1).padStart(2, "0")}
                   </span>
@@ -2933,7 +2972,7 @@ function ScanPage({
 
           <h2 className="mt-1 text-3xl font-black">{avaliacao.titulo}</h2>
 
-          <p className="mt-2 text-slate-500">
+          <p className="mt-2 text-blue-500">
             {avaliacao.disciplina}
             {" • "}
             {avaliacao.turmaNome}
@@ -2956,7 +2995,7 @@ function ScanPage({
             <div>
               <h3 className="font-black">1. Selecione o aluno</h3>
 
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-blue-500">
                 Alunos da turma {avaliacao.turmaNome}
               </p>
             </div>
@@ -2977,12 +3016,12 @@ function ScanPage({
                   className={`w-full rounded-2xl border p-3 text-left transition ${
                     selectedStudent?.id === student.id
                       ? "border-blue-500 bg-blue-50"
-                      : "hover:bg-slate-50"
+                      : "hover:bg-blue-50"
                   }`}
                 >
                   <p className="font-bold">{student.nome}</p>
 
-                  <p className="text-xs text-slate-500">{student.turmaNome}</p>
+                  <p className="text-xs text-blue-500">{student.turmaNome}</p>
                 </button>
               ))
             )}
@@ -3005,7 +3044,7 @@ function ScanPage({
                 : "Selecione um aluno primeiro"}
             </h3>
 
-            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-blue-500">
               Depois de selecionar o aluno, abra a câmera para fazer a leitura
               automática das marcações da folha.
             </p>
@@ -3302,7 +3341,7 @@ function GradesPage({
         <div>
           <p className="text-sm font-bold text-blue-600">NOTAS</p>
           <h2 className="mt-1 text-3xl font-black">Cadastrar notas</h2>
-          <p className="mt-2 text-slate-500">
+          <p className="mt-2 text-blue-500">
             Cada referência cadastrada aparece uma única vez. Quando houver
             várias avaliações com a mesma referência, somente a mais
             recentemente cadastrada é considerada.
@@ -3383,7 +3422,7 @@ function GradesPage({
 
       <div className="overflow-x-auto rounded-3xl border bg-white shadow-sm">
         <table className="w-full min-w-225 text-sm">
-          <thead className="bg-slate-100">
+          <thead className="bg-blue-100">
             <tr>
               <th className="px-4 py-3 text-left">Aluno</th>
 
@@ -3399,7 +3438,7 @@ function GradesPage({
                   <th key={key} className="px-4 py-3">
                     <div>{referencia}</div>
                     {headerName && maxNote !== undefined && (
-                      <div className="text-xs font-normal text-slate-500">
+                      <div className="text-xs font-normal text-blue-500">
                         {headerName}
                       </div>
                     )}
@@ -3482,11 +3521,141 @@ function GradesPage({
         </table>
 
         {!turmaStudents.length && (
-          <div className="p-10 text-center text-slate-500">
+          <div className="p-10 text-center text-blue-500">
             Nenhum aluno encontrado.
           </div>
         )}
       </div>
     </section>
   );
+}
+
+
+// ======================================================
+// AUTENTICAÇÃO E AUTORIZAÇÃO DE PROFESSORES
+// ======================================================
+type AuthorizedTeacher = { Nome?: string; Email?: string };
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [teacher, setTeacher] = useState<AuthorizedTeacher | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [authError, setAuthError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+
+    // Mantém a sessão no próprio navegador mesmo após fechar a página.
+    setPersistence(auth, browserLocalPersistence).then(() => {
+      if (!active) return;
+      unsubscribe = onAuthStateChanged(auth, async (current) => {
+        setUser(current);
+        if (!current || !current.email) {
+          setTeacher(null);
+          setChecking(false);
+          return;
+        }
+        try {
+          const normalizedEmail = current.email.trim().toLowerCase();
+          const authorized = await getDocs(query(collection(db, "professores"), where("Email", "==", normalizedEmail)));
+          if (authorized.empty) {
+            setTeacher(null);
+            localStorage.removeItem(`corretor-professor-${current.uid}`);
+            await signOut(auth);
+            setAuthError("Este e-mail não está autorizado. Solicite seu cadastro à administração.");
+          } else {
+            const data = authorized.docs[0].data() as AuthorizedTeacher;
+            setTeacher(data);
+            localStorage.setItem(`corretor-professor-${current.uid}`, JSON.stringify(data));
+            setAuthError("");
+          }
+        } catch (e) {
+          console.error(e);
+          const cached = localStorage.getItem(`corretor-professor-${current.uid}`);
+          const code = (e as { code?: string })?.code ?? "";
+          if (cached && ["unavailable", "deadline-exceeded", "network-request-failed"].some((part) => code.includes(part))) {
+            // Usa apenas o vínculo previamente validado neste navegador; as regras do Firestore continuam protegendo os dados.
+            setTeacher(JSON.parse(cached) as AuthorizedTeacher);
+            setAuthError("");
+          } else {
+            setTeacher(null);
+            setAuthError("Não foi possível validar seu acesso. Confira sua conexão e tente novamente.");
+          }
+        } finally {
+          setChecking(false);
+        }
+      });
+    }).catch((e) => {
+      console.error("Não foi possível ativar a sessão persistente:", e);
+      setAuthError("Não foi possível manter sua sessão neste navegador.");
+      setChecking(false);
+    });
+
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, []);
+
+  const handleSignOut = async () => {
+    if (user) localStorage.removeItem(`corretor-professor-${user.uid}`);
+    await signOut(auth);
+    setTeacher(null);
+    setUser(null);
+  };
+
+  const handleAuth = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true); setAuthError("");
+    try {
+      if (mode === "signup") {
+        const normalizedEmail = email.trim().toLowerCase();
+        if (!fullName.trim()) { setAuthError("Informe seu nome completo."); return; }
+        if (password !== confirmPassword) { setAuthError("As senhas não coincidem."); return; }
+        // Cria a conta e, já autenticado, consulta a lista de professores autorizados.
+        const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+        const allowed = await getDocs(query(collection(db, "professores"), where("Email", "==", normalizedEmail)));
+        if (allowed.empty) {
+          await signOut(auth);
+          setAuthError("Este e-mail não está autorizado. Solicite sua inclusão à administração.");
+          return;
+        }
+        // Atualiza nome/e-mail no documento já autorizado.
+        await setDoc(doc(db, "professores", allowed.docs[0].id), {
+          ...allowed.docs[0].data(),
+          Nome: fullName.trim(),
+          Email: normalizedEmail,
+          uid: credential.user.uid,
+          atualizadoEm: serverTimestamp(),
+        });
+      } else await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+    } catch (e) {
+      const err = e as { code?: string };
+      const messages: Record<string, string> = {
+        "auth/invalid-credential": "E-mail ou senha incorretos.",
+        "auth/email-already-in-use": "Este e-mail já possui conta. Faça login.",
+        "auth/weak-password": "A senha deve ter pelo menos 6 caracteres.",
+        "auth/invalid-email": "Informe um e-mail válido.",
+      };
+      setAuthError(messages[err.code ?? ""] ?? "Não foi possível autenticar. Tente novamente.");
+    } finally { setBusy(false); }
+  };
+
+  const handleGoogle = async () => {
+    setBusy(true); setAuthError("");
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+    catch (e) { console.error(e); setAuthError("Não foi possível entrar com Google."); }
+    finally { setBusy(false); }
+  };
+
+  if (checking) return <div className="min-h-screen grid place-items-center bg-blue-50 text-blue-600 font-semibold">Verificando acesso…</div>;
+  if (user && teacher) return <><div className="flex items-center justify-between bg-blue-900 px-5 py-3 text-white text-sm"><strong>Olá, {teacher.Nome || user.displayName || user.email}!</strong><button onClick={handleSignOut} className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20">Sair</button></div><MainApp /></>;
+
+  return <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 flex items-center justify-center p-4"><section className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl border border-blue-100"><img src="/logo-corretor.png" alt="Logo Corretor Gabarito" className="mx-auto mb-5 h-28 w-28 rounded-full object-cover shadow-md"/><h1 className="text-center text-2xl font-black text-blue-800">Corretor Gabarito</h1><p className="mt-2 text-center text-blue-500">Acesso exclusivo para professores</p><form onSubmit={handleAuth} className="mt-7 space-y-4">{mode==="signup" && <label className="block text-sm font-semibold text-blue-700">Nome completo<input type="text" required value={fullName} onChange={e=>setFullName(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="Seu nome completo"/></label>}<label className="block text-sm font-semibold text-blue-700">E-mail<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="professor@email.com"/></label><label className="block text-sm font-semibold text-blue-700">Senha<input type="password" required minLength={6} value={password} onChange={e=>setPassword(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="Sua senha"/></label>{mode==="signup" && <label className="block text-sm font-semibold text-blue-700">Confirmar senha<input type="password" required minLength={6} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} className="mt-1 w-full rounded-xl border border-blue-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="Digite a senha novamente"/></label>}{authError && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{authError}</p>}<button disabled={busy} className="w-full rounded-xl bg-blue-600 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-60">{busy?"Aguarde…":mode==="login"?"Entrar":"Cadastrar"}</button></form><div className="my-4 flex items-center gap-3 text-xs text-blue-400"><span className="h-px flex-1 bg-blue-200"/>ou<span className="h-px flex-1 bg-blue-200"/></div><button onClick={handleGoogle} disabled={busy} className="flex w-full items-center justify-center gap-3 rounded-lg border border-[#dadce0] bg-white py-3 text-[15px] font-medium text-[#3c4043] shadow-sm hover:bg-[#f8faff] hover:border-[#d2e3fc] disabled:opacity-60"><svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.65 13.45 24 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.92c-.58 2.96-2.26 5.47-4.78 7.16l7.73 6C44.37 37.95 46.98 31.7 46.98 24.55z"/><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.28-3.12.78-4.59l-7.98-6.19A23.93 23.93 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.82l-7.73-6c-2.14 1.44-4.88 2.3-8.17 2.3-6.28 0-11.6-4.24-13.47-9.9l-7.97 6.2C6.51 42.62 14.62 48 24 48z"/></svg>Continuar com Google</button><p className="mt-6 text-center text-sm text-blue-500">{mode==="login"?"Ainda não tem conta?":"Já possui conta?"} <button onClick={()=>{setMode(mode==="login"?"signup":"login");setAuthError("");}} className="font-bold text-blue-600">{mode==="login"?"Cadastrar":"Fazer login"}</button></p><p className="mt-4 text-center text-xs text-blue-400">Cadastro e acesso somente para e-mails autorizados.</p></section></main>;
 }
