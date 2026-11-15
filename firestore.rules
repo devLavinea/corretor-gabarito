@@ -3,24 +3,59 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Professor só consulta seu registro pelo e-mail autenticado.
-    // Pode atualizar Nome/uid do próprio registro, sem alterar o e-mail autorizado.
+    // Lista administrativa de professores autorizados e vínculo individual.
+    // O cadastro administrativo original (ID livre) nunca pode ser criado,
+    // alterado ou excluído pelo professor.
     match /professores/{professorId} {
+      // Permite consultar somente registros cujo e-mail é o do usuário.
       allow read: if request.auth != null
         && request.auth.token.email != null
-        && request.auth.token.email == resource.data.Email;
+        && resource.data.Email == request.auth.token.email;
 
+      // O professor pode criar o próprio vínculo UID somente se apontar para
+      // um registro administrativo já existente e autorizado para seu e-mail.
+      allow create: if request.auth != null
+        && request.auth.token.email != null
+        && professorId == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.Email == request.auth.token.email
+        && request.resource.data.authorizedDocId is string
+        && exists(/databases/$(database)/documents/professores/$(request.resource.data.authorizedDocId))
+        && get(/databases/$(database)/documents/professores/$(request.resource.data.authorizedDocId)).data.Email == request.auth.token.email;
+
+      // Atualiza somente o próprio vínculo, mantendo o e-mail e validando
+      // novamente o registro administrativo de origem.
       allow update: if request.auth != null
         && request.auth.token.email != null
-        && request.auth.token.email == resource.data.Email
-        && request.resource.data.Email == resource.data.Email;
-      allow create, delete: if false;
+        && professorId == request.auth.uid
+        && resource.data.Email == request.auth.token.email
+        && request.resource.data.Email == resource.data.Email
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.authorizedDocId is string
+        && exists(/databases/$(database)/documents/professores/$(request.resource.data.authorizedDocId))
+        && get(/databases/$(database)/documents/professores/$(request.resource.data.authorizedDocId)).data.Email == request.auth.token.email
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['Nome', 'uid', 'authorizedDocId', 'atualizadoEm']);
+
+      // Nenhum professor pode remover vínculos ou cadastros de autorização.
+      allow delete: if false;
     }
 
-    // Demais dados exigem autenticação com e-mail (não usuário anônimo).
-    match /{document=**} {
-      allow read, write: if request.auth != null
-        && request.auth.token.email != null;
+    // Dados usados pelo aplicativo. Exige vínculo UID válido e e-mail igual
+    // ao do Authentication. A coleção professores fica fora desta regra.
+    match /{colecao}/{documento=**} {
+      allow read, write: if colecao in [
+          'turmas',
+          'alunos',
+          'avaliacoes',
+          'resultados',
+          'notas',
+          'configuracoes'
+        ]
+        && request.auth != null
+        && request.auth.token.email != null
+        && exists(/databases/$(database)/documents/professores/$(request.auth.uid))
+        && get(/databases/$(database)/documents/professores/$(request.auth.uid)).data.Email == request.auth.token.email;
     }
   }
 }

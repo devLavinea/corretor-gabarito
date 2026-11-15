@@ -3581,16 +3581,30 @@ export default function App() {
         }
         try {
           const normalizedEmail = current.email.trim().toLowerCase();
-          const authorized = await getDocs(query(collection(db, "professores"), where("Email", "==", normalizedEmail)));
+          const authorized = await getDocs(
+            query(collection(db, "professores"), where("Email", "==", normalizedEmail)),
+          );
           if (authorized.empty) {
             setTeacher(null);
             localStorage.removeItem(`corretor-professor-${current.uid}`);
             await signOut(auth);
             setAuthError("Este e-mail não está autorizado. Solicite seu cadastro à administração.");
           } else {
-            const data = authorized.docs[0].data() as AuthorizedTeacher;
-            setTeacher(data);
-            localStorage.setItem(`corretor-professor-${current.uid}`, JSON.stringify(data));
+            // Cria/atualiza o vínculo seguro pelo UID. As regras validam
+            // authorizedDocId contra o cadastro previamente liberado pela administração.
+            const authorizedDoc = authorized.docs[0];
+            const authorizedData = authorizedDoc.data() as AuthorizedTeacher;
+            const teacherData = {
+              ...authorizedData,
+              Email: normalizedEmail,
+              Nome: String(authorizedData.Nome ?? current.displayName ?? ""),
+              uid: current.uid,
+              authorizedDocId: authorizedDoc.id,
+              atualizadoEm: serverTimestamp(),
+            };
+            await setDoc(doc(db, "professores", current.uid), teacherData, { merge: true });
+            setTeacher(teacherData);
+            localStorage.setItem(`corretor-professor-${current.uid}`, JSON.stringify(teacherData));
             setAuthError("");
           }
         } catch (e) {
@@ -3680,27 +3694,26 @@ export default function App() {
           setAuthError("Este e-mail não está autorizado. Solicite sua inclusão à administração.");
           return;
         }
-        // Salva o nome no documento autorizado. Com merge:true, o Firestore
-        // cria o campo Nome se ainda não existir e atualiza somente os campos
-        // enviados, preservando os demais dados do professor.
+        // Cria o vínculo no documento cujo ID é o UID autenticado.
+        // As regras só permitem isso quando authorizedDocId aponta para um
+        // cadastro administrativo cujo campo Email corresponde ao usuário.
         const teacherName = fullName.trim();
         const teacherData = {
           Nome: teacherName,
           Email: normalizedEmail,
           uid: credential.user.uid,
+          authorizedDocId: allowed.docs[0].id,
           atualizadoEm: serverTimestamp(),
         };
         await setDoc(
-          doc(db, "professores", allowed.docs[0].id),
+          doc(db, "professores", credential.user.uid),
           teacherData,
           { merge: true },
         );
         await updateProfile(credential.user, { displayName: teacherName });
         const updatedTeacher = {
           ...allowed.docs[0].data(),
-          Nome: teacherName,
-          Email: normalizedEmail,
-          uid: credential.user.uid,
+          ...teacherData,
         } as AuthorizedTeacher;
         setTeacher(updatedTeacher);
         localStorage.setItem(

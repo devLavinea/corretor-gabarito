@@ -1,24 +1,36 @@
 # Configuração Firebase — Corretor Gabarito
 
-## Authentication
-No Firebase Console > Authentication > Método de login, mantenha ativados:
+## 1. Authentication
+No Firebase Console > Authentication > Método de login, mantenha ativado:
 - E-mail/senha
-- Google
+- Google (se utilizado)
 
-O login anônimo não é mais usado pelo aplicativo.
+## 2. Professores autorizados
+Na coleção `professores`, a administração deve manter um documento de autorização por professor, com:
+- `Email`: e-mail exato da conta usada no Firebase Authentication
+- `Nome`: nome completo do professor
 
-## Professores autorizados
-Na coleção `professores`, cada professor deve ter um documento com os campos:
-- `Email`: e-mail da conta Google ou e-mail que usará no login (mesmo e-mail; comparação sem distinção de maiúsculas/minúsculas no app)
-- `Nome`: nome completo que aparecerá na saudação
+O documento administrativo pode ter ID aleatório. O aplicativo consulta esse registro pelo campo `Email` e cria/atualiza, após validar o cadastro, o vínculo individual em `professores/{UID}`.
 
-Exemplo: `Email: lavinea2411@gmail.com`, `Nome: Lavinea Souza Santos`.
+O vínculo individual contém `Email`, `Nome`, `uid` e `authorizedDocId`. Não apague manualmente os documentos de vínculo enquanto o professor estiver usando o sistema.
 
-O documento pode ter ID aleatório. Após o primeiro login autorizado, o app cria também um documento de vínculo com ID igual ao UID do Firebase Authentication.
+## 3. Publicar as regras
+No Firebase Console > Firestore Database > Regras:
+1. Substitua todo o conteúdo pelas regras do arquivo `firestore.rules`.
+2. Clique em **Publicar**.
+3. Aguarde a confirmação da publicação.
 
-## Regras
-Copie o conteúdo de `firestore.rules` para Firebase Console > Firestore Database > Regras e publique.
-As regras bloqueiam usuários sem vínculo. Professores não podem alterar/excluir a lista de autorização; o vínculo de UID é criado pelo app no primeiro acesso validado.
+As regras permitem ler o cadastro administrativo correspondente ao e-mail autenticado, criar o vínculo UID somente quando ele aponta para um cadastro administrativo existente com o mesmo e-mail, e acessar as coleções de trabalho somente com esse vínculo.
 
-## Observação sobre cadastro
-A opção “Cadastre-se” cria a conta no Authentication, mas só libera o sistema se o e-mail já estiver na coleção `professores`. Se não estiver, o app encerra a sessão e informa que o e-mail não está autorizado.
+## 4. Como o primeiro acesso funciona
+1. A administração cadastra previamente o e-mail do professor em `professores`.
+2. O professor cria a conta ou entra com a conta já existente.
+3. O aplicativo verifica o e-mail na lista autorizada.
+4. Se autorizado, cria/atualiza `professores/{UID}`.
+5. Com o vínculo validado, o professor pode cadastrar, editar e excluir turmas, alunos, avaliações, resultados, notas e configurações.
+
+## Importante
+- Não publique regras que liberem `read, write` para qualquer pessoa autenticada.
+- Não exclua os documentos existentes em `turmas`, `alunos`, `avaliacoes`, `resultados`, `notas` ou `configuracoes`.
+- A lista de autorização em `professores` deve ser mantida pela administração.
+- Os dados de trabalho continuam compartilhados entre os professores autorizados, conforme a estrutura atual do aplicativo; esta correção não faz separação de dados por professor.
