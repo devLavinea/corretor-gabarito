@@ -177,6 +177,7 @@ const alternatives: Answer[] = ["A", "B", "C", "D"];
 
 function MainApp() {
   const [page, setPage] = useState<Page>("home");
+  const [scanReturnPage, setScanReturnPage] = useState<Page>("setup");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [turmas, setTurmas] = useState<Turma[]>([]);
@@ -985,6 +986,7 @@ function MainApp() {
       setAvaliacoes((current) => [avaliacao, ...current]);
       setCurrentAvaliacao(avaliacao);
       setSelectedStudent(null);
+      setScanReturnPage("setup");
       setPage("scan");
     } catch (err) {
       console.error(err);
@@ -1055,18 +1057,38 @@ function MainApp() {
       setSavingResult(true);
       setError("");
 
-      const ref = await addDoc(collection(db, "resultados"), {
+      const existingResult = results.find(
+        (item) =>
+          item.avaliacaoId === currentAvaliacao.id &&
+          item.studentId === selectedStudent.id,
+      );
+
+      let resultId = existingResult?.id;
+      const resultData = {
         ...result,
         criadoEm: serverTimestamp(),
-      });
+      };
 
-      setResults((current) => [
-        {
-          ...result,
-          id: ref.id,
-        },
-        ...current,
-      ]);
+      if (resultId) {
+        await setDoc(doc(db, "resultados", resultId), resultData, {
+          merge: true,
+        });
+      } else {
+        const ref = await addDoc(collection(db, "resultados"), resultData);
+        resultId = ref.id;
+      }
+
+      setResults((current) => {
+        const updated = { ...result, id: resultId };
+        const withoutPrevious = current.filter(
+          (item) =>
+            !(
+              item.avaliacaoId === currentAvaliacao.id &&
+              item.studentId === selectedStudent.id
+            ),
+        );
+        return [updated, ...withoutPrevious];
+      });
 
       setPage("avaliacoes");
     } catch (err) {
@@ -1484,6 +1506,13 @@ function MainApp() {
             students={students}
             results={results}
             onExport={handleExport}
+            onCorrect={(avaliacao) => {
+              setCurrentAvaliacao(avaliacao);
+              setSelectedStudent(null);
+              setScanReturnPage("avaliacoes");
+              setError("");
+              setPage("scan");
+            }}
             onUpdate={(updated) => {
               setAvaliacoes((current) =>
                 current.map((item) =>
@@ -1544,7 +1573,7 @@ function MainApp() {
             onSelectStudent={(student) => setSelectedStudent(student)}
             onOpenCamera={() => setCameraOpen(true)}
             onSimulate={() => void saveResult(currentAvaliacao.gabarito)}
-            onBack={() => setPage("setup")}
+            onBack={() => setPage(scanReturnPage)}
             saving={savingResult}
           />
         )}
@@ -2374,6 +2403,7 @@ function AvaliacoesPage({
   students,
   results,
   onExport,
+  onCorrect,
   onUpdate,
   onDelete,
 }: {
@@ -2381,6 +2411,7 @@ function AvaliacoesPage({
   students: Student[];
   results: Result[];
   onExport: () => void;
+  onCorrect: (avaliacao: Avaliacao) => void;
   onUpdate: (avaliacao: Avaliacao) => void;
   onDelete: (avaliacao: Avaliacao) => void;
 }) {
@@ -2452,6 +2483,12 @@ function AvaliacoesPage({
                   </p>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    onClick={() => onCorrect(item)}
+                    className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white"
+                  >
+                    Corrigir
+                  </button>
                   <button
                     onClick={() =>
                       setExpandedId((current) =>
