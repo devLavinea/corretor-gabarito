@@ -997,6 +997,7 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   const [cameraReady, setCameraReady] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
   const [flashSupported, setFlashSupported] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState<number | null>(null);
 
   // ====================================================
   // PARAR CÂMERA
@@ -1380,24 +1381,23 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
   // RESOLVER QUESTÃO AMBÍGUA
   // ====================================================
 
-  function chooseAmbiguous(questionNumber: number, answer: OMRAnswer) {
+
+  // Permite revisar qualquer questão, mesmo quando a leitura automática foi considerada segura.
+  function editAnswer(questionNumber: number, answer: OMRAnswer) {
     setResult((current) => {
       if (!current) return current;
-
       const nextAmbiguous = { ...current.ambiguous };
       delete nextAmbiguous[questionNumber];
-
       return {
         ...current,
         answers: current.answers.map((value, index) =>
           index === questionNumber - 1 ? answer : value,
         ),
-        uncertain: current.uncertain.filter(
-          (value) => value !== questionNumber,
-        ),
+        uncertain: current.uncertain.filter((value) => value !== questionNumber),
         ambiguous: nextAmbiguous,
       };
     });
+    setEditingQuestion(null);
   }
 
   // ====================================================
@@ -1633,122 +1633,35 @@ export default function OMRScanner({ onClose, onDetected }: Props) {
                         </div>
                       </div>
 
-                      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                      <p className="mt-3 text-sm text-blue-600">Todas as questões podem ser abertas e corrigidas manualmente, inclusive as que foram lidas como corretas.</p>
+                      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
                         {result.answers.map((answer, index) => {
-                          const uncertain = result.uncertain.includes(
-                            index + 1,
-                          );
-
+                          const question = index + 1;
+                          const uncertain = result.uncertain.includes(question);
                           return (
-                            <div
-                              key={index}
-                              className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
-                                uncertain
-                                  ? "border-amber-300 bg-amber-50"
-                                  : "bg-white"
-                              }`}
-                            >
-                              <span className="text-sm font-bold">
-                                {String(index + 1).padStart(2, "0")}
-                              </span>
-
-                              <span
-                                className={`grid h-8 w-8 place-items-center rounded-full font-black ${
-                                  uncertain
-                                    ? "bg-amber-100 text-amber-700"
-                                    : "bg-blue-50 text-blue-700"
-                                }`}
-                              >
-                                {answer}
-                              </span>
-                            </div>
+                            <button key={question} type="button" onClick={() => setEditingQuestion(question)}
+                              className={`rounded-xl border p-3 text-left transition hover:border-blue-500 ${uncertain ? "border-amber-300 bg-amber-50" : "border-blue-100 bg-white"}`}>
+                              <span className="block text-sm font-bold">Questão {question}</span>
+                              <span className="mt-2 flex h-10 items-center justify-center rounded-lg bg-blue-50 text-xl font-black text-blue-700">{answer}</span>
+                              <span className={`mt-1 block text-center text-xs ${uncertain ? "text-amber-800" : "text-blue-500"}`}>{uncertain ? "Revisão necessária" : "Toque para editar"}</span>
+                            </button>
                           );
                         })}
                       </div>
-
-                      {result.uncertain.length > 0 && (
-                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                          <b>Atenção:</b>{" "}
-                          {Object.keys(result.ambiguous).length > 0
-                            ? "foram detectadas duas ou mais bolinhas em algumas questões. Escolha abaixo qual resposta considerar."
-                            : "algumas questões não tiveram uma marca suficientemente clara. Escolha a resposta manualmente antes de confirmar."}
+                      {editingQuestion !== null && (
+                        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-blue-950/60 p-4" role="dialog" aria-modal="true" aria-label={`Editar questão ${editingQuestion}`} onClick={() => setEditingQuestion(null)}>
+                          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                            <h3 className="text-center text-xl font-black text-blue-950">Editar questão {editingQuestion}</h3>
+                            <p className="mt-1 text-center text-sm text-blue-500">Resposta identificada: {result.answers[editingQuestion - 1]}</p>
+                            <div className="mt-5 grid grid-cols-2 gap-3">
+                              {ALTERNATIVES.map((option) => (
+                                <button key={option} type="button" onClick={() => editAnswer(editingQuestion, option)}
+                                  className={`h-14 rounded-xl border-2 text-xl font-black ${result.answers[editingQuestion - 1] === option ? "border-blue-600 bg-blue-600 text-white" : "border-blue-200 bg-blue-50 text-blue-800"}`}>{option}</button>
+                              ))}
+                            </div>
+                            <button type="button" onClick={() => setEditingQuestion(null)} className="mt-4 w-full rounded-xl border py-3 font-bold text-blue-600">Fechar sem alterar</button>
+                          </div>
                         </div>
-                      )}
-
-                      {result.uncertain
-                        .filter((question) => !result.ambiguous[question])
-                        .map((question) => (
-                          <div
-                            key={question}
-                            className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4"
-                          >
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                              <div>
-                                <p className="font-black text-amber-950">
-                                  Questão {question}: leitura insuficiente
-                                </p>
-                                <p className="mt-1 text-xs text-amber-800">
-                                  Nenhuma marca ficou clara o bastante. Escolha
-                                  a alternativa correta.
-                                </p>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {ALTERNATIVES.map((option) => (
-                                  <button
-                                    key={option}
-                                    type="button"
-                                    onClick={() =>
-                                      chooseAmbiguous(question, option)
-                                    }
-                                    className="grid h-11 w-11 place-items-center rounded-xl border-2 border-amber-300 bg-white font-black text-amber-900 hover:bg-amber-100"
-                                  >
-                                    {option}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-
-                      {Object.entries(result.ambiguous).map(
-                        ([question, options]) => (
-                          <div
-                            key={question}
-                            className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4"
-                          >
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                              <div>
-                                <p className="font-black text-amber-950">
-                                  Questão {question}: múltiplas marcações
-                                  detectadas
-                                </p>
-                                <p className="mt-1 text-xs text-amber-800">
-                                  Selecione a alternativa que deve ser
-                                  considerada.
-                                </p>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {(options.length ? options : ALTERNATIVES).map(
-                                  (option) => (
-                                    <button
-                                      key={option}
-                                      type="button"
-                                      onClick={() =>
-                                        chooseAmbiguous(
-                                          Number(question),
-                                          option,
-                                        )
-                                      }
-                                      className="grid h-11 w-11 place-items-center rounded-xl border-2 border-amber-300 bg-white font-black text-amber-900 hover:bg-amber-100"
-                                    >
-                                      {option}
-                                    </button>
-                                  ),
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ),
                       )}
 
                       {result.uncertain.length === 0 &&
